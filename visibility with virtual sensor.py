@@ -25,7 +25,7 @@ euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]])
 
 def polyhull(data_set):
     hull = ConvexHull(data_set)
-    faces = np.column_stack((3*np.ones((len(hull.simplices), 1), dtype=np.int), hull.simplices)).flatten()
+    faces = np.column_stack((3*np.ones((len(hull.simplices), 1), dtype=int), hull.simplices)).flatten()
     poly = pv.PolyData(hull.points, faces)
     return poly
 
@@ -62,7 +62,7 @@ for i in range(len(euler_ang)):
     # surf = cloud.delaunay_2d()
     surf = polyhull(data_after)
 
-    plotter.add_mesh(surf, show_edges=True, opacity=0.75)
+    plotter.add_mesh(surf, show_edges=True)
 
 
 mesh_tower = pv.read("Model.ply")
