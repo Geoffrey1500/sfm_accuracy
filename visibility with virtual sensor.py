@@ -1,8 +1,7 @@
-import cv2
 import pyvista as pv
 import numpy as np
 import pandas as pd
-import open3d as o3d
+from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation as R
 
 '''
@@ -18,63 +17,52 @@ print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
-print(np.gcd(resol_x, resol_y))
 data = pd.read_csv("internal_and_external_parameters_4.csv")
 print(data.head(5))
-print(data.index)
 cam_loc = data[["x", "y", "z"]].values*1000
-euler_ang = data[["pitch", "roll", "heading"]].values - np.array([[180, 180, 0]])
+euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]])
 
 
-def tran_matrix_builder(rot_, tran_):
-    r_ = R.from_euler('ZYX', [rot_], degrees=True)
-    r_matrix_ = r_[0].as_matrix()
-
-    tran_ = tran_.reshape((-1, 1))
-
-    tra_mat_ = np.vstack(((np.hstack((r_matrix_, tran_))), np.array([[0., 0., 0., 1.]])))
-
-    return tra_mat_
-
-
-transform_matrix = tran_matrix_builder(np.array([0, 30, 0]), np.array([0, 0, 0]))
-print("output test")
-print(transform_matrix)
+def polyhull(data_set):
+    hull = ConvexHull(data_set)
+    faces = np.column_stack((3*np.ones((len(hull.simplices), 1), dtype=np.int), hull.simplices)).flatten()
+    poly = pv.PolyData(hull.points, faces)
+    return poly
 
 
 # To create sensor plane
 n_points = 2
-scale_factor = 500
+scale_factor = 300
 X1 = np.linspace(-w/2*scale_factor, w/2*scale_factor, 3*n_points)
 Y1 = np.linspace(-h/2*scale_factor, h/2*scale_factor, 2*n_points)
 X, Y = np.meshgrid(X1, Y1)
-Z = np.zeros_like(X) - 8.8
+Z = (np.zeros_like(X) - f)*scale_factor
 
 X_reshaped = np.reshape(X, (-1, 1))
 Y_reshaped = np.reshape(Y, (-1, 1))
 Z_reshaped = np.reshape(Z, (-1, 1))
 
 point_data = np.hstack((X_reshaped, Y_reshaped, Z_reshaped))
+point_data = np.vstack((point_data, np.array([0, 0, 0])))
 print(point_data)
 print(len(point_data))
 
-cloud = pv.PolyData(point_data)
-surf = cloud.delaunay_2d()
-# surf = surf.transform(transform_matrix)
-
-
 plotter = pv.Plotter()
+cloud1 = pv.PolyData(point_data)
+surf1 = cloud1.delaunay_2d()
+plotter.add_mesh(surf1, show_edges=True)
+
+
 for i in range(len(euler_ang)):
-    tran_mat = tran_matrix_builder(euler_ang[i], cam_loc[i])
-    cam_i = surf.copy()
-    cam_i = cam_i.transform(tran_mat)
+    rot_mat = R.from_euler('ZXY', [euler_ang[i]], degrees=True)
+    rotated_data = rot_mat.apply(point_data)
+    data_after = rotated_data + cam_loc[i]
 
-    plotter.add_mesh(cam_i, show_edges=True)
+    # cloud = pv.PolyData(data_after)
+    # surf = cloud.delaunay_2d()
+    surf = polyhull(data_after)
 
-
-# sphere = pv.Sphere(radius=1000)
-
-# plotter.add_mesh(sphere, show_edges=True)
+    plotter.add_mesh(surf, show_edges=True, opacity=0.75)
 
 
 mesh_tower = pv.read("Model.ply")
@@ -96,4 +84,3 @@ plotter.add_mesh(arrow_z, show_edges=True, color="b")
 
 _ = plotter.add_axes(box=True)
 plotter.show()
-
