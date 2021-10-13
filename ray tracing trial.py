@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import ConvexHull
 import open3d as o3d
+import copy
 from scipy.spatial.transform import Rotation as R
 
 
@@ -38,26 +39,29 @@ Y_reshaped = np.reshape(Y, (-1, 1))
 Z_reshaped = np.reshape(Z, (-1, 1))
 
 point_data = np.hstack((X_reshaped, Y_reshaped,  Z_reshaped))
-print(point_data)
+# print(point_data)
 print(len(point_data))
 
 plotter = pv.Plotter()
 
-mesh_tower = pv.read("Model.ply")
+mesh_tower = pv.read("Sparse.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
 plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
-pcd = o3d.io.read_point_cloud("Model.ply")
+pcd = o3d.io.read_point_cloud("Sparse.ply")
+diameter = np.linalg.norm(np.asarray(pcd.get_max_bound()) - np.asarray(pcd.get_min_bound()))
+radius = diameter * 1000
 
 
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-print(mesh_tower.face_normals)
 
 for j in range(1):
     start = points_coor[1000]
+    pcd_copy = copy.deepcopy(pcd)
+    print(np.asarray(pcd_copy.points))
 
     for i in range(len(euler_ang)):
         rot_mat = R.from_euler('ZXY', [euler_ang[i]], degrees=True)
@@ -65,25 +69,38 @@ for j in range(1):
         data_after = rotated_data + cam_loc[i]
 
         cloud = pv.PolyData(data_after)
-        surf = cloud.delaunay_2d()
+        sensor_plane = cloud.delaunay_2d()
 
         stop = cam_loc[i]
-
         # Perform ray trace
-        point_cam, ind_cam = surf.ray_trace(start, stop)
+        point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
+        point_main, ind_main = mesh_tower.ray_trace(start, stop)
         # print(points)
 
-        point_main, ind_main = mesh_tower.ray_trace(start, stop)
 
-        if point_cam.size and len(point_main) <= 1:
-            # print(len(point_main))
+        _, pt_map = pcd_copy.hidden_point_removal(cam_loc[i]/1000, radius)
+        pcd_new = pcd_copy.select_by_index(pt_map)
+
+        index_help = np.where(np.sum(np.absolute(np.asarray(pcd_new.points)*1000 - start), axis=1) <= 10 ** (-6))[0]
+        # print(index_help, "查看索引")
+
+        if point_cam.size and index_help.size and point_main.size and len(point_main) <= 1:
+            print(cam_loc[i] / 1000, radius, "重要参数")
+        # if point_cam.size and point_main.size and len(point_main) <= 1:
             # Create geometry to represent ray trace
+            ray = pv.Line(start, stop)
+            intersection = pv.PolyData(point_cam)
+            plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
+            plotter.add_mesh(intersection, color="blue",
+                             point_size=15, label="Intersection Points")
+            plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
+        elif point_cam.size and point_main.size and len(point_main) <= 1:
             ray = pv.Line(start, stop)
             intersection = pv.PolyData(point_cam)
             plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
             plotter.add_mesh(intersection, color="blue",
                              point_size=15, label="Intersection Points")
-            plotter.add_mesh(surf, show_edges=True, opacity=0.75)
+            plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="r")
 
 
 _ = plotter.add_axes(box=True)
