@@ -43,33 +43,13 @@ print(len(point_data))
 
 plotter = pv.Plotter()
 
-# cloud1 = pv.PolyData(point_data)
-# surf1 = cloud1.delaunay_2d()
-# plotter.add_mesh(surf1, show_edges=True)
-
-# arrow_scale = 500
-# arrow_x = pv.Arrow(direction=(1., 0., 0.))
-# arrow_x.scale([arrow_scale, arrow_scale, arrow_scale])
-# arrow_y = pv.Arrow(direction=(0., 1., 0.))
-# arrow_y.scale([arrow_scale, arrow_scale, arrow_scale])
-# arrow_z = pv.Arrow(direction=(0., 0., 1.))
-# arrow_z.scale([arrow_scale, arrow_scale, arrow_scale])
-
-# plotter.add_mesh(arrow_x, show_edges=True, color="r")
-# plotter.add_mesh(arrow_y, show_edges=True, color="g")
-# plotter.add_mesh(arrow_z, show_edges=True, color="b")
-
 mesh_tower = pv.read("Model.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
 plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
-# pcd = o3d.io.read_point_cloud("sparse.xyz", format="xyzrgb")
 pcd = o3d.io.read_point_cloud("Model.ply")
 
-# 统一法向量方向
-# pcd.estimate_normals()
-# pcd.orient_normals_consistent_tangent_plane(10)
 
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
@@ -110,16 +90,4 @@ _ = plotter.add_axes(box=True)
 
 plotter.show()
 
-# pcd.estimate_normals()
-# o3d.visualization.draw_geometries([pcd], point_show_normal=True)
-# # mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=11)
-#
-# # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, 0.01)
-#
-# # radii = [0.005, 0.01, 0.02, 0.04]*1000
-# # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-# #     pcd, o3d.utility.DoubleVector(radii))
-#
-# pcd.orient_normals_consistent_tangent_plane(10)
-# o3d.visualization.draw_geometries([pcd], point_show_normal=True)
 
