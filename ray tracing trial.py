@@ -1,42 +1,125 @@
 import pyvista as pv
 import numpy as np
+import pandas as pd
+from scipy.spatial import ConvexHull
+import open3d as o3d
+from scipy.spatial.transform import Rotation as R
 
-# Define a simple Gaussian surface
-n = 20
-x = np.linspace(-200, 200, num=n) + np.random.uniform(-5, 5, size=n)
-y = np.linspace(-200, 200, num=n) + np.random.uniform(-5, 5, size=n)
-xx, yy = np.meshgrid(x, y)
-A, b = 100, 100
-zz = A * np.exp(-0.5 * ((xx / b) ** 2.0 + (yy / b) ** 2.0))
 
-# Get the points as a 2D NumPy array (N by 3)
-points = np.c_[xx.reshape(-1), yy.reshape(-1), zz.reshape(-1)]
-points[0:5, :]
-print(points)
+'''
+大疆Phantom 4 Pro
+传感器大小：1英寸 13.2 mm x 8.8 mm
+分辨率：5472×3648
+像元大小：2.4123 um
+焦距：8.8 mm
+FOV：84°？
 
-# simply pass the numpy points to the PolyData constructor
-cloud = pv.PolyData(points)
+'''
+print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
+w, h = 13.2, 8.8
+f = 8.8
+resol_x, resol_y = 5472, 3648
+data = pd.read_csv("internal_and_external_parameters_4.csv")
+print(data.head(5))
+cam_loc = data[["x", "y", "z"]].values*1000
+euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
 
-surf = cloud.delaunay_2d()
-surf.plot(show_edges=True)
 
-start = [0, 0, 80]
-stop = [0.25, 1, 110]
+# To create sensor plane
+n_points = 2
+scale_factor = 300
+X1 = np.linspace(-w/2*scale_factor, w/2*scale_factor, 3*n_points)
+Y1 = np.linspace(-h/2*scale_factor, h/2*scale_factor, 2*n_points)
+X, Y = np.meshgrid(X1, Y1)
+Z = (np.zeros_like(X) - f)*scale_factor
 
-# Perform ray trace
-points, ind = surf.ray_trace(start, stop)
-print(points)
+X_reshaped = np.reshape(X, (-1, 1))
+Y_reshaped = np.reshape(Y, (-1, 1))
+Z_reshaped = np.reshape(Z, (-1, 1))
 
-# Create geometry to represent ray trace
-ray = pv.Line(start, stop)
-intersection = pv.PolyData(points)
+point_data = np.hstack((X_reshaped, Y_reshaped,  Z_reshaped))
+print(point_data)
+print(len(point_data))
 
-p = pv.Plotter()
-p.add_mesh(surf,
-           show_edges=True, opacity=1, color="w",
-           lighting=False, label="Test Mesh")
-p.add_mesh(ray, color="blue", line_width=5, label="Ray Segment")
-p.add_mesh(intersection, color="maroon",
-           point_size=25, label="Intersection Points")
-p.add_legend()
-p.show()
+plotter = pv.Plotter()
+
+# cloud1 = pv.PolyData(point_data)
+# surf1 = cloud1.delaunay_2d()
+# plotter.add_mesh(surf1, show_edges=True)
+
+# arrow_scale = 500
+# arrow_x = pv.Arrow(direction=(1., 0., 0.))
+# arrow_x.scale([arrow_scale, arrow_scale, arrow_scale])
+# arrow_y = pv.Arrow(direction=(0., 1., 0.))
+# arrow_y.scale([arrow_scale, arrow_scale, arrow_scale])
+# arrow_z = pv.Arrow(direction=(0., 0., 1.))
+# arrow_z.scale([arrow_scale, arrow_scale, arrow_scale])
+
+# plotter.add_mesh(arrow_x, show_edges=True, color="r")
+# plotter.add_mesh(arrow_y, show_edges=True, color="g")
+# plotter.add_mesh(arrow_z, show_edges=True, color="b")
+
+mesh_tower = pv.read("Model.ply")
+mesh_tower.scale([1000, 1000, 1000])
+
+plotter.add_mesh(mesh_tower, show_edges=True, color="white")
+
+# pcd = o3d.io.read_point_cloud("sparse.xyz", format="xyzrgb")
+pcd = o3d.io.read_point_cloud("Model.ply")
+
+# 统一法向量方向
+# pcd.estimate_normals()
+# pcd.orient_normals_consistent_tangent_plane(10)
+
+points_coor = np.asarray(pcd.points)*1000
+points_color = np.asarray(pcd.colors)
+
+print(mesh_tower.face_normals)
+
+for j in range(1):
+    start = points_coor[1000]
+
+    for i in range(len(euler_ang)):
+        rot_mat = R.from_euler('ZXY', [euler_ang[i]], degrees=True)
+        rotated_data = rot_mat.apply(point_data)
+        data_after = rotated_data + cam_loc[i]
+
+        cloud = pv.PolyData(data_after)
+        surf = cloud.delaunay_2d()
+
+        stop = cam_loc[i]
+
+        # Perform ray trace
+        point_cam, ind_cam = surf.ray_trace(start, stop)
+        # print(points)
+
+        point_main, ind_main = mesh_tower.ray_trace(start, stop)
+
+        if point_cam.size and len(point_main) <= 1:
+            # print(len(point_main))
+            # Create geometry to represent ray trace
+            ray = pv.Line(start, stop)
+            intersection = pv.PolyData(point_cam)
+            plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
+            plotter.add_mesh(intersection, color="blue",
+                             point_size=15, label="Intersection Points")
+            plotter.add_mesh(surf, show_edges=True, opacity=0.75)
+
+
+_ = plotter.add_axes(box=True)
+
+plotter.show()
+
+# pcd.estimate_normals()
+# o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+# # mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=11)
+#
+# # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, 0.01)
+#
+# # radii = [0.005, 0.01, 0.02, 0.04]*1000
+# # mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+# #     pcd, o3d.utility.DoubleVector(radii))
+#
+# pcd.orient_normals_consistent_tangent_plane(10)
+# o3d.visualization.draw_geometries([pcd], point_show_normal=True)
+
