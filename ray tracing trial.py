@@ -27,6 +27,13 @@ euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) +
 
 
 def scale_with_ref(scale_factor, reference, point_):
+    '''
+    使得物体以参考点为中心进行缩放
+    :param scale_factor: 缩放系数 (1 x N)
+    :param reference: 参考点 (1 x N)
+    :param point_: 目标点坐标 (1 x N)
+    :return: 转换后的点坐标 (1 x N)
+    '''
     scale_mat_ = np.array([[scale_factor[0], 0, 0, (1 - scale_factor[0]) * reference[0]],
                            [0, scale_factor[1], 0, (1 - scale_factor[1]) * reference[1]],
                            [0, 0, scale_factor[2], (1 - scale_factor[2]) * reference[2]],
@@ -50,8 +57,6 @@ Y_reshaped = np.reshape(Y, (-1, 1))
 Z_reshaped = np.reshape(Z, (-1, 1))
 
 point_data = np.hstack((X_reshaped, Y_reshaped,  Z_reshaped))
-# print(point_data)
-print(len(point_data))
 
 plotter = pv.Plotter()
 
@@ -64,7 +69,6 @@ pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 diameter = np.linalg.norm(np.asarray(pcd.get_max_bound()) - np.asarray(pcd.get_min_bound()))
 radius = diameter * 1000
 
-
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
@@ -72,7 +76,7 @@ interested_id = 1000
 for j in range(1):
     start = points_coor[interested_id]
     pcd_copy = copy.deepcopy(pcd)
-    print(np.asarray(pcd_copy.points))
+    print(len(np.asarray(pcd_copy.points)), "点的数量")
 
     for i in range(len(euler_ang)):
         rot_mat = R.from_euler('ZXY', [euler_ang[i]], degrees=True)
@@ -84,43 +88,31 @@ for j in range(1):
 
         stop = cam_loc[i]
 
+        # 延长射线，确保两端都突出一点，减少计算错误
         ref = (start + stop) / 2
         s_f = np.ones(3)*(1 + 5/np.linalg.norm(start - stop))
         start_new = scale_with_ref(s_f, ref, start)
-        stop_new = scale_with_ref(s_f, ref, stop)
 
         # Perform ray trace
         point_cam, ind_cam = sensor_plane.ray_trace(start_new, stop)
         point_main, ind_main = mesh_tower.ray_trace(start_new, stop)
-        # print(points)
 
         if point_cam.size and point_main.size and len(point_main) <= 1:
-        # if point_cam.size and not point_main.size:
-            ray = pv.Line(start, stop)
+            ray = pv.Line(start_new, stop)
+            intersection = pv.PolyData(point_cam)
+            plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
+            plotter.add_mesh(intersection, color="blue",
+                             point_size=5, label="Intersection Points")
+            plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
+        elif point_cam.size and point_main.size:
+            ray = pv.Line(start_new, stop)
             intersection = pv.PolyData(point_cam)
             plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
             plotter.add_mesh(intersection, color="blue",
-                             point_size=15, label="Intersection Points")
+                             point_size=5, label="Intersection Points")
             plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="r")
-
-            _, pt_map = pcd_copy.hidden_point_removal(cam_loc[i] / 1000, radius)
-            # # pcd_new = pcd_copy.select_by_index(pt_map)
-            # pcd_new = points_coor[pt_map]
-            print(len(pt_map) / len(points_coor), "可视百分比")
-            # index_help = np.where(np.sum(np.absolute(np.asarray(pcd_new.points)*1000 - start), axis=1) <= 10 ** (-1))[0]
-            # print(index_help, "查看索引")
-
-            # if index_help.size:
-            # if (pcd_new == start).any():
-            if interested_id in pt_map:
-                print(cam_loc[i] / 1000, radius, "重要参数")
-                ray = pv.Line(start, stop)
-                intersection = pv.PolyData(point_cam)
-                plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
-                plotter.add_mesh(intersection, color="blue",
-                                 point_size=15, label="Intersection Points")
-                plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
-
+        else:
+            plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="white")
 
 _ = plotter.add_axes(box=True)
 
