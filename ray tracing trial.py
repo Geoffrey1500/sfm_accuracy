@@ -57,9 +57,9 @@ radius = diameter * 1000
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-
+interested_id = 200000
 for j in range(1):
-    start = points_coor[1000]
+    start = points_coor[interested_id]
     pcd_copy = copy.deepcopy(pcd)
     print(np.asarray(pcd_copy.points))
 
@@ -77,30 +77,32 @@ for j in range(1):
         point_main, ind_main = mesh_tower.ray_trace(start, stop)
         # print(points)
 
-
-        _, pt_map = pcd_copy.hidden_point_removal(cam_loc[i]/1000, radius)
-        pcd_new = pcd_copy.select_by_index(pt_map)
-
-        index_help = np.where(np.sum(np.absolute(np.asarray(pcd_new.points)*1000 - start), axis=1) <= 10 ** (-6))[0]
-        # print(index_help, "查看索引")
-
-        if point_cam.size and index_help.size and point_main.size and len(point_main) <= 1:
-            print(cam_loc[i] / 1000, radius, "重要参数")
         # if point_cam.size and point_main.size and len(point_main) <= 1:
-            # Create geometry to represent ray trace
-            ray = pv.Line(start, stop)
-            intersection = pv.PolyData(point_cam)
-            plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
-            plotter.add_mesh(intersection, color="blue",
-                             point_size=15, label="Intersection Points")
-            plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
-        elif point_cam.size and point_main.size and len(point_main) <= 1:
+        if point_cam.size and not point_main.size:
             ray = pv.Line(start, stop)
             intersection = pv.PolyData(point_cam)
             plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
             plotter.add_mesh(intersection, color="blue",
                              point_size=15, label="Intersection Points")
             plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="r")
+
+            _, pt_map = pcd_copy.hidden_point_removal(cam_loc[i] / 1000, radius)
+            # # pcd_new = pcd_copy.select_by_index(pt_map)
+            # pcd_new = points_coor[pt_map]
+            print(len(pt_map) / len(points_coor), "可视百分比")
+            # index_help = np.where(np.sum(np.absolute(np.asarray(pcd_new.points)*1000 - start), axis=1) <= 10 ** (-1))[0]
+            # print(index_help, "查看索引")
+
+            # if index_help.size:
+            # if (pcd_new == start).any():
+            if interested_id in pt_map:
+                print(cam_loc[i] / 1000, radius, "重要参数")
+                ray = pv.Line(start, stop)
+                intersection = pv.PolyData(point_cam)
+                plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
+                plotter.add_mesh(intersection, color="blue",
+                                 point_size=15, label="Intersection Points")
+                plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
 
 
 _ = plotter.add_axes(box=True)
