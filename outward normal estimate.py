@@ -43,27 +43,35 @@ if np.array([[0, 1, 3]]) in a:
 start = a[1]
 end = a[2]
 
-s_f = 0.5
+s_f = np.ones(3)*0.5
 ref = (start + end)/2
 print(start)
 print(end)
 print(ref)
+print(ref[0], ref[1], ref[2])
 
-scale_mat = np.array([[s_f, 0, 0, (1-s_f)*ref[0]],
-                      [0, s_f, 0, (1-s_f)*ref[1]],
-                      [0, 0, s_f, (1-s_f)*ref[2]],
-                      [0, 0, 0, 1]])
 
-start_new = np.dot(scale_mat, np.vstack((start.reshape((-1, 1)), np.array([[1]]))))[0:3, :].flatten()
-end_new = np.dot(scale_mat, np.vstack((end.reshape((-1, 1)), np.array([[1]]))))[0:3, :].flatten()
+def scale_with_ref(scale_factor, reference, point_):
+    scale_mat_ = np.array([[scale_factor[0], 0, 0, (1 - scale_factor[0]) * reference[0]],
+                           [0, scale_factor[1], 0, (1 - scale_factor[1]) * reference[1]],
+                           [0, 0, scale_factor[2], (1 - scale_factor[2]) * reference[2]],
+                           [0, 0, 0, 1]])
+    point_ = np.vstack((point_.reshape((-1, 1)), np.array([[1]])))
+    point_new_ = np.dot(scale_mat_, point_)
+    point_new_ = point_new_[0:3, :].flatten()
 
-print(np.dot(scale_mat, np.vstack((start.reshape((-1, 1)), np.array([[1]])))))
-print(np.dot(scale_mat, np.vstack((end.reshape((-1, 1)), np.array([[1]])))))
+    return point_new_
+
+
+start_new = scale_with_ref(s_f, ref, start)
+end_new = scale_with_ref(s_f, ref, end)
+
+
 print(start_new, end_new)
+print(start_new.shape)
 
-ray_1 = pv.Line(a[1], a[2])
+ray_1 = pv.Line(start, end)
 ray_2 = pv.Line(start_new, end_new)
-ray_2.scale([2, 2, 2])
 
 plotter = pv.Plotter()
 plotter.add_mesh(ray_1, color="green", label="Ray Segment", opacity=0.75)

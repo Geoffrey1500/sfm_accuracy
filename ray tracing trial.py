@@ -26,6 +26,17 @@ cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
 
 
+def scale_with_ref(scale_factor, reference, point_):
+    scale_mat_ = np.array([[scale_factor[0], 0, 0, (1 - scale_factor[0]) * reference[0]],
+                           [0, scale_factor[1], 0, (1 - scale_factor[1]) * reference[1]],
+                           [0, 0, scale_factor[2], (1 - scale_factor[2]) * reference[2]],
+                           [0, 0, 0, 1]])
+    point_ = np.vstack((point_.reshape((-1, 1)), np.array([[1]])))
+    point_new_ = np.dot(scale_mat_, point_)
+    point_new_ = point_new_[0:3, :].flatten()
+
+    return point_new_
+
 # To create sensor plane
 n_points = 2
 scale_factor = 300
@@ -44,12 +55,12 @@ print(len(point_data))
 
 plotter = pv.Plotter()
 
-mesh_tower = pv.read("Sparse.ply")
+mesh_tower = pv.read("Low_LoD.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
 plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
-pcd = o3d.io.read_point_cloud("Sparse.ply")
+pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 diameter = np.linalg.norm(np.asarray(pcd.get_max_bound()) - np.asarray(pcd.get_min_bound()))
 radius = diameter * 1000
 
@@ -57,7 +68,7 @@ radius = diameter * 1000
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-interested_id = 200000
+interested_id = 1000
 for j in range(1):
     start = points_coor[interested_id]
     pcd_copy = copy.deepcopy(pcd)
@@ -72,13 +83,19 @@ for j in range(1):
         sensor_plane = cloud.delaunay_2d()
 
         stop = cam_loc[i]
+
+        ref = (start + stop) / 2
+        s_f = np.ones(3)*(1 + 5/np.linalg.norm(start - stop))
+        start_new = scale_with_ref(s_f, ref, start)
+        stop_new = scale_with_ref(s_f, ref, stop)
+
         # Perform ray trace
-        point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
-        point_main, ind_main = mesh_tower.ray_trace(start, stop)
+        point_cam, ind_cam = sensor_plane.ray_trace(start_new, stop)
+        point_main, ind_main = mesh_tower.ray_trace(start_new, stop)
         # print(points)
 
-        # if point_cam.size and point_main.size and len(point_main) <= 1:
-        if point_cam.size and not point_main.size:
+        if point_cam.size and point_main.size and len(point_main) <= 1:
+        # if point_cam.size and not point_main.size:
             ray = pv.Line(start, stop)
             intersection = pv.PolyData(point_cam)
             plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
