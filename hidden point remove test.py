@@ -10,9 +10,9 @@ print(diameter)
 print(np.asarray(pcd.get_max_bound()), np.asarray(pcd.get_min_bound()))
 # o3d.visualization.draw_geometries([pcd])
 print("Define parameters used for hidden_point_removal")
-camera = [0, 0, 40] # 定义用于隐藏点删除的参数，获取从给定视图中可见的所有点，可视化结果
-radius = diameter * 100
-
+camera = [40, 20, 40] # 定义用于隐藏点删除的参数，获取从给定视图中可见的所有点，可视化结果
+radius = diameter * 1
+print(radius)
 print("Get all points that are visible from given view point")
 _, pt_map = pcd.hidden_point_removal(camera, radius)
 
@@ -37,10 +37,10 @@ print("查看原始数据")
 print(original_point)
 
 ans = []
-for i in range(len(original_point)):
+# for i in range(len(original_point)):
     # print(i in pt_map)
-    if i in pt_map:
-        ans.append(i)
+    # if i in pt_map:
+    #     ans.append(i)
     # # print(index_help_2)
     # if original_point[i] in np_point:
     #     # print(i)
@@ -60,6 +60,6 @@ print(np_point)
 # mesh = o3d.io.read_triangle_mesh("Model.ply")
 # print(mesh)
 # o3d.io.write_triangle_mesh("test.ply", pcd_new)
-
-
-print()
+view_point = o3d.geometry.TriangleMesh.create_sphere()
+view_point.translate(np.array([camera]).T)
+o3d.visualization.draw_geometries([point_set_after, mesh_frame, view_point])

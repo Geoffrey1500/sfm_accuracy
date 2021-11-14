@@ -65,8 +65,6 @@ mesh_tower.scale([1000, 1000, 1000])
 
 
 pcd = o3d.io.read_point_cloud("Model.ply")
-diameter = np.linalg.norm(np.asarray(pcd.get_max_bound()) - np.asarray(pcd.get_min_bound()))
-radius = diameter * 100
 
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
@@ -127,13 +125,18 @@ for j in np.arange(900, 905):
         # # else:
         # #     plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="white")
         #
-            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, radius)
+            dis_point_to_cam = np.sqrt(np.sum((start - stop)**2))/1000
+            # print("新的半径", dis_point_to_cam)
+            print("隐点移除原始数据单位", np.asarray(pcd.points))
+            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 100*dis_point_to_cam)
 
             if j in pt_map:
+                sphere = pv.Sphere(radius=1000, center=cam_loc[i])
                 print(len(pt_map) / len(points_coor), "可视百分比")
-                print(cam_loc[i] / 1000, radius, "重要参数")
+                print(cam_loc[i] / 1000, dis_point_to_cam, "重要参数")
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
+                plotter.add_mesh(sphere, color="red", opacity=0.75)
                 plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
                 plotter.add_mesh(intersection, color="blue",
                                  point_size=15, label="Intersection Points")
