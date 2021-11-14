@@ -58,26 +58,27 @@ Z_reshaped = np.reshape(Z, (-1, 1))
 
 point_data = np.hstack((X_reshaped, Y_reshaped,  Z_reshaped))
 
-# plotter = pv.Plotter()
+plotter = pv.Plotter()
 
 mesh_tower = pv.read("Model.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
+plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
 pcd = o3d.io.read_point_cloud("Model.ply")
 diameter = np.linalg.norm(np.asarray(pcd.get_max_bound()) - np.asarray(pcd.get_min_bound()))
 radius = diameter * 100
 
+p_mesh = o3d.io.read_triangle_mesh("Model.ply")
+
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(900, 905):
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh_tower, show_edges=True, color="white")
-
-    start = points_coor[j]
-    # pcd_copy = copy.deepcopy(pcd)
-    # print(len(np.asarray(pcd_copy.points)), "点的数量")
+interested_id = 2030
+for j in range(1):
+    start = points_coor[interested_id]
+    pcd_copy = copy.deepcopy(pcd)
+    print(len(np.asarray(pcd_copy.points)), "点的数量")
 
     for i in range(len(euler_ang)):
         rot_mat = R.from_euler('ZXY', [euler_ang[i]], degrees=True)
@@ -93,20 +94,16 @@ for j in np.arange(900, 905):
         point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
 
         if ind_cam.size:
-            # ray = pv.Line(start, stop)
-            # intersection = pv.PolyData(point_cam)
-            # plotter.add_mesh(ray, color="white", line_width=1, label="Ray Segment", opacity=0.75)
-            # plotter.add_mesh(intersection, color="blue",
-            #                  point_size=5, label="Intersection Points")
-            # plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="white")
 
-            # 延长射线，确保两端都突出一点，减少计算错误
+            # scene = o3d.t.geometry.RaycastingScene()
+            # cube_id = scene.add_triangles(p_mesh)
+
             ref = (start + stop) / 2
             s_f = np.ones(3) * (1 + 5 / np.linalg.norm(start - stop))
             start_new = scale_with_ref(s_f, ref, start)
-            point_main, ind_main = mesh_tower.ray_trace(stop, start_new)
+            point_main, ind_main = mesh_tower.ray_trace(start_new, stop)
 
-            point_old, ind_old = mesh_tower.ray_trace(stop, start)
+            point_old, ind_old = mesh_tower.ray_trace(start, stop)
             #
             # if ind_main.size and len(ind_main) <= 1:
             #     ray = pv.Line(start_new, stop)
@@ -127,9 +124,9 @@ for j in np.arange(900, 905):
         # # else:
         # #     plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="white")
         #
-            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, radius)
+            _, pt_map = pcd_copy.hidden_point_removal(cam_loc[i] / 1000, radius)
 
-            if j in pt_map:
+            if interested_id in pt_map:
                 print(len(pt_map) / len(points_coor), "可视百分比")
                 print(cam_loc[i] / 1000, radius, "重要参数")
                 ray = pv.Line(start, stop)
@@ -139,7 +136,8 @@ for j in np.arange(900, 905):
                                  point_size=15, label="Intersection Points")
                 plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
 
-    _ = plotter.add_axes(box=True)
+_ = plotter.add_axes(box=True)
 
-    plotter.show()
+plotter.show()
+
 
