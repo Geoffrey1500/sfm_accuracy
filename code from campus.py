@@ -128,7 +128,7 @@ for j in np.arange(900, 905):
             dis_point_to_cam = np.sqrt(np.sum((start - stop)**2))/1000
             # print("新的半径", dis_point_to_cam)
             print("隐点移除原始数据单位", np.asarray(pcd.points))
-            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 100*dis_point_to_cam)
+            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 500*dis_point_to_cam)
 
             if j in pt_map:
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])

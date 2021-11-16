@@ -11,7 +11,7 @@ print(np.asarray(pcd.get_max_bound()), np.asarray(pcd.get_min_bound()))
 # o3d.visualization.draw_geometries([pcd])
 print("Define parameters used for hidden_point_removal")
 camera = [40, 20, 40] # 定义用于隐藏点删除的参数，获取从给定视图中可见的所有点，可视化结果
-radius = diameter * 1
+radius = diameter * 100000
 print(radius)
 print("Get all points that are visible from given view point")
 _, pt_map = pcd.hidden_point_removal(camera, radius)
@@ -31,10 +31,10 @@ print(original_point[0])
 mask = np.isin(original_point[0], np_point)
 print(np_point[0] in original_point)
 
-print("查看原始数据")
-print(np_point)
-print("查看原始数据")
-print(original_point)
+# print("查看原始数据")
+# print(np_point)
+# print("查看原始数据")
+# print(original_point)
 
 ans = []
 # for i in range(len(original_point)):
