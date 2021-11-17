@@ -60,11 +60,11 @@ point_data = np.hstack((X_reshaped, Y_reshaped,  Z_reshaped))
 
 # plotter = pv.Plotter()
 
-mesh_tower = pv.read("Model.ply")
+mesh_tower = pv.read("Sparse.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
 
-pcd = o3d.io.read_point_cloud("Model.ply")
+pcd = o3d.io.read_point_cloud("Sparse.ply")
 
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
@@ -117,18 +117,18 @@ for j in np.arange(900, 905):
             if ind_old.size and len(ind_old) <= 1:
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
-                plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=0.75)
+                plotter.add_mesh(ray, color="r", line_width=1, label="Ray Segment", opacity=1)
                 plotter.add_mesh(intersection, color="blue",
                                  point_size=5, label="Intersection Points")
-                plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="r")
+                plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="r")
 
         # # else:
         # #     plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="white")
         #
             dis_point_to_cam = np.sqrt(np.sum((start - stop)**2))/1000
-            # print("新的半径", dis_point_to_cam)
-            print("隐点移除原始数据单位", np.asarray(pcd.points))
-            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 500*dis_point_to_cam)
+            print("新的半径", dis_point_to_cam)
+            # print("隐点移除原始数据单位", np.asarray(pcd.points))
+            _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 1000*dis_point_to_cam)
 
             if j in pt_map:
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])
@@ -136,11 +136,11 @@ for j in np.arange(900, 905):
                 print(cam_loc[i] / 1000, dis_point_to_cam, "重要参数")
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
-                plotter.add_mesh(sphere, color="red", opacity=0.75)
-                plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=0.75)
+                plotter.add_mesh(sphere, color="red", opacity=1)
+                plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=1)
                 plotter.add_mesh(intersection, color="blue",
                                  point_size=15, label="Intersection Points")
-                plotter.add_mesh(sensor_plane, show_edges=True, opacity=0.75, color="green")
+                plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
 
     _ = plotter.add_axes(box=True)
 

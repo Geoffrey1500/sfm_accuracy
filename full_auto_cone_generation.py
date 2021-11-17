@@ -8,7 +8,7 @@ import gc
 
 
 # np.random.seed(0)
-number_of_points = 50
+number_of_points = 100
 camera_location = np.random.randint(-60, 80, (number_of_points, 2))
 camera_height = np.ones((number_of_points, 1)) * 50
 # print(height)
