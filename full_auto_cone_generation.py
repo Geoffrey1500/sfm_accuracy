@@ -24,6 +24,9 @@ z_axis = np.array([0, 0, 1])
 
 
 def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.02, resolution=6):
+    print("Check the input")
+    print(cam_)
+    print(target_)
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -75,10 +78,8 @@ def fix_mesh(mesh, detail="normal"):
     return mesh
 
 
-ball_in_center = o3d.geometry.TriangleMesh.create_sphere(radius=0.5)
 mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0, 0, 0])
-core_set = [ball_in_center, mesh_frame]
-ball_set = []
+core_set = [mesh_frame]
 
 for i in range(len(camera_location)):
     cone1 = useful_tools(camera_location[i], target_point, z_axis)
@@ -111,6 +112,7 @@ for i in range(len(camera_location)):
         meshC = pymesh.form_mesh(np.asarray(cone3.vertices), np.asarray(cone3.triangles))
 
         if i % 50 == 0 and i != len(camera_location)-1:
+            # release RAM per 50 round
             print("I am delete sometion")
             clean_mesh = fix_mesh(output_mesh, detail="low")
             pymesh.save_mesh("output_mesh.obj", clean_mesh)
