@@ -74,8 +74,8 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
     r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
     cone_.translate(tran_1_)
     cone_.rotate(r_, center=(0, 0, 0))
-    print("what happend")
-    print(tran_2_)
+    # print("what happend")
+    # print(tran_2_)
     cone_.translate(tran_2_)
 
     return cone_
@@ -90,15 +90,15 @@ def fix_mesh(mesh_input, detail="normal"):
         target_len = diag_len * 2.5e-3
     elif detail == "low":
         target_len = diag_len * 1e-2
-    print("Target resolution: {} mm".format(target_len))
+    # print("Target resolution: {} mm".format(target_len))
 
     mesh_input, __ = pymesh.remove_degenerated_triangles(mesh_input)
+    mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
     mesh_input, __ = pymesh.remove_isolated_vertices(mesh_input)
 
     mesh_input, __ = pymesh.collapse_short_edges(mesh_input, target_len)
     mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input)
 
-    mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
     mesh_input = pymesh.compute_outer_hull(mesh_input)
     mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
 
@@ -115,7 +115,7 @@ pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(900, 905):
+for j in np.arange(881, 886):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
