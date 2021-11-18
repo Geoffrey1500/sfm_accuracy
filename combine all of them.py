@@ -81,8 +81,8 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
     return cone_
 
 
-def fix_mesh(mesh, detail="normal"):
-    bbox_min, bbox_max = mesh.bbox
+def fix_mesh(mesh_input, detail="normal"):
+    bbox_min, bbox_max = mesh_input.bbox
     diag_len = norm(bbox_max - bbox_min)
     if detail == "normal":
         target_len = diag_len * 5e-3
@@ -92,25 +92,23 @@ def fix_mesh(mesh, detail="normal"):
         target_len = diag_len * 1e-2
     print("Target resolution: {} mm".format(target_len))
 
-    mesh, __ = pymesh.remove_degenerated_triangles(mesh)
-    mesh, __ = pymesh.remove_isolated_vertices(mesh)
+    mesh_input, __ = pymesh.remove_degenerated_triangles(mesh_input)
+    mesh_input, __ = pymesh.remove_isolated_vertices(mesh_input)
 
-    mesh, __ = pymesh.collapse_short_edges(mesh, target_len)
-    mesh, __ = pymesh.remove_obtuse_triangles(mesh)
+    mesh_input, __ = pymesh.collapse_short_edges(mesh_input, target_len)
+    mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input)
 
-    mesh, __ = pymesh.remove_duplicated_faces(mesh)
-    mesh = pymesh.compute_outer_hull(mesh)
-    mesh, __ = pymesh.remove_duplicated_faces(mesh)
+    mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
+    mesh_input = pymesh.compute_outer_hull(mesh_input)
+    mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
 
-    return mesh
+    return mesh_input
 
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
 mesh_tower = pv.read("Low_LoD.ply")
 mesh_tower.scale([1000, 1000, 1000])
-
-
 
 pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 
@@ -122,7 +120,8 @@ for j in np.arange(900, 905):
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
     start = points_coor[j]
-    cam_index = []
+    coneA = 0.00001
+    v = 1
 
     for i in range(len(euler_ang)):
         rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
@@ -139,12 +138,14 @@ for j in np.arange(900, 905):
         if ind_cam.size:
             # Perform hidden point removal from camera viewpoint
             dis_point_to_cam = np.sqrt(np.sum((start - stop)**2))/1000
-            print("新的半径", dis_point_to_cam)
+            # print("新的半径", dis_point_to_cam)
             # print("隐点移除原始数据单位", np.asarray(pcd.points))
             _, pt_map = pcd.hidden_point_removal(cam_loc[i] / 1000, 550*dis_point_to_cam)
 
+            start_time = time.process_time()
             if j in pt_map:
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])
+                print(coneA)
                 print(len(pt_map) / len(points_coor), "可视百分比")
                 print(cam_loc[i] / 1000, dis_point_to_cam, "重要参数")
                 ray = pv.Line(start, stop)
@@ -155,73 +156,55 @@ for j in np.arange(900, 905):
                                  point_size=15, label="Intersection Points")
                 plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
 
-                cam_index.append(i)
+                if coneA == 0.00001:
+                    coneA = useful_tools(cam_loc[i], points_coor[j], z_axis)
+                    meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
+                    print("new round started")
+                    # v += 1
+                    continue
 
-    mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0, 0, 0])
-    core_set = [mesh_frame]
+                print("working on " + str(v))
+                coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
+                meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
-    camera_location = cam_loc[cam_index]
-    print("Print Camera location")
-    print(camera_location)
+                meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
 
-    for k in range(len(camera_location)):
-        cone1 = useful_tools(camera_location[k], points_coor[j], z_axis)
-        core_set.append(cone1)
+                v += 1
+                if v % 5 == 0 and v != 0:
+                    #release RAM per 5 round
+                    print("I am delete sometion")
+                    clean_mesh = fix_mesh(meshA, detail="low")
 
-        ball = o3d.geometry.TriangleMesh.create_sphere(radius=1000)
-        ball.translate(camera_location[k])
-        core_set.append(ball)
+                    pymesh.save_mesh("meshA.obj", clean_mesh)
+                    pymesh.save_mesh("meshB.obj", meshB)
+                    del meshA, meshB
+                    gc.collect()
+                    meshA = pymesh.load_mesh("meshA.obj")
+                    meshB = pymesh.load_mesh("meshB.obj")
+                print("after")
 
-    o3d.visualization.draw_geometries(core_set)
+            end_time = time.process_time()
 
     _ = plotter.add_axes(box=True)
 
     plotter.show()
 
-    cone1 = useful_tools(camera_location[0], points_coor[j], z_axis)
-    meshA = pymesh.form_mesh(np.asarray(cone1.vertices), np.asarray(cone1.triangles))
-
-    start = time.process_time()
-    for v in range(len(camera_location) - 1):
-        print("working on " + str(v + 1))
-        cone2 = useful_tools(camera_location[v + 1], points_coor[j], z_axis)
-        meshB = pymesh.form_mesh(np.asarray(cone2.vertices), np.asarray(cone2.triangles))
-
-        if v % 10 == 0 and v != 0:
-            # release RAM per 50 round
-            print("I am delete sometion")
-            clean_mesh = fix_mesh(meshA, detail="low")
-            pymesh.save_mesh("meshA.obj", clean_mesh)
-            pymesh.save_mesh("meshB.obj", meshB)
-            del meshA, meshB
-            gc.collect()
-            meshA = pymesh.load_mesh("meshA.obj")
-            meshB = pymesh.load_mesh("meshB.obj")
-        # clean_mesh = fix_mesh(meshA, detail="low")
-        # clean_mesh = meshA
-
-        meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="corefinement")
-        # output_mesh = clean_mesh
-        print("after")
-
-        if v == len(camera_location):
-            print("I am the last one")
-            output_mesh = fix_mesh(meshA, detail="low")
-
-    end = time.process_time()
-
     points = np.asarray(meshA.vertices)
     faces = np.asarray(meshA.faces)
 
     print(len(points))
-    print(faces)
-    print("一共模拟 " + str(len(cam_index)) + " 个点")
+    # print(faces)
+    print("一共模拟 " + str(v) + " 个点")
     print("相交体积为：" + str(meshA.volume) + "mm^3")
-    print("共运行：" + str(end - start) + "s")
+    print("共运行：" + str(end_time - start_time) + "s")
 
     # faces = [[0, 1, 2]]
     mesh = pv.make_tri_mesh(points, faces)
     # mesh = pyvista.wrap(tmesh)
     mesh.plot(show_edges=True, line_width=1)
+
+    del meshA, meshB
+    gc.collect()
+
 
 
