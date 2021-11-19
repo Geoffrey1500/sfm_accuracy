@@ -81,6 +81,30 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
     return cone_
 
 
+# def fix_mesh(mesh_input, detail="normal"):
+#     bbox_min, bbox_max = mesh_input.bbox
+#     diag_len = norm(bbox_max - bbox_min)
+#     if detail == "normal":
+#         target_len = diag_len * 5e-3
+#     elif detail == "high":
+#         target_len = diag_len * 2.5e-3
+#     elif detail == "low":
+#         target_len = diag_len * 1e-2
+#     # print("Target resolution: {} mm".format(target_len))
+#
+#     mesh_input, __ = pymesh.remove_degenerated_triangles(mesh_input)
+#     mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
+#     mesh_input, __ = pymesh.remove_isolated_vertices(mesh_input)
+#
+#     mesh_input, __ = pymesh.collapse_short_edges(mesh_input, target_len)
+#     mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input)
+#
+#     mesh_input = pymesh.compute_outer_hull(mesh_input)
+#     mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
+#
+#     return mesh_input
+
+
 def fix_mesh(mesh_input, detail="normal"):
     bbox_min, bbox_max = mesh_input.bbox
     diag_len = norm(bbox_max - bbox_min)
@@ -90,17 +114,31 @@ def fix_mesh(mesh_input, detail="normal"):
         target_len = diag_len * 2.5e-3
     elif detail == "low":
         target_len = diag_len * 1e-2
-    # print("Target resolution: {} mm".format(target_len))
+    print("Target resolution: {} mm".format(target_len))
 
-    mesh_input, __ = pymesh.remove_degenerated_triangles(mesh_input)
+    count = 0
+    mesh_input, __ = pymesh.remove_degenerated_triangles(mesh_input, 100)
+    mesh_input, __ = pymesh.split_long_edges(mesh_input, target_len)
+    num_vertices = mesh_input.num_vertices
+    while True:
+        mesh_input, __ = pymesh.collapse_short_edges(mesh_input, 1e-3)
+        mesh_input, __ = pymesh.collapse_short_edges(mesh_input, target_len,
+                                               preserve_feature=True)
+        mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input, 150.0, 100)
+        if mesh_input.num_vertices == num_vertices:
+            break
+
+        num_vertices = mesh_input.num_vertices
+        print("#v: {}".format(num_vertices))
+        count += 1
+        if count > 1: break
+
+    mesh_input = pymesh.resolve_self_intersection(mesh_input)
     mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
-    mesh_input, __ = pymesh.remove_isolated_vertices(mesh_input)
-
-    mesh_input, __ = pymesh.collapse_short_edges(mesh_input, target_len)
-    mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input)
-
     mesh_input = pymesh.compute_outer_hull(mesh_input)
     mesh_input, __ = pymesh.remove_duplicated_faces(mesh_input)
+    mesh_input, __ = pymesh.remove_obtuse_triangles(mesh_input, 179.0, 5)
+    mesh_input, __ = pymesh.remove_isolated_vertices(mesh_input)
 
     return mesh_input
 
