@@ -153,11 +153,11 @@ pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(881, 1001):
+for j in np.arange(500, 1001):
 
     start = points_coor[j]
     coneA = 0.00001
-    v = 1
+    v = 0
 
     for i in range(len(euler_ang)):
         rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
@@ -185,43 +185,31 @@ for j in np.arange(881, 1001):
                 if coneA == 0.00001:
                     coneA = useful_tools(cam_loc[i], points_coor[j], z_axis)
                     meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
-                    # print("new round started")
+                    print("new round started")
                     # v += 1
                     continue
 
-                # print("working on " + str(v))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
                 meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
                 meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
+                if len(np.asarray(meshA.vertices)) != 0:
+                    meshA = pymesh.convex_hull(meshA, engine="auto")
 
                 v += 1
-                if v % 5 == 0 and len(np.asarray(meshA.vertices)) != 0:
-                    #release RAM per 5 round
-                    # print("I am delete sometion")
-                    clean_mesh = fix_mesh(meshA, detail="low")
-
-                    pymesh.save_mesh("meshA.obj", clean_mesh)
-                    pymesh.save_mesh("meshB.obj", meshB)
-                    del meshA, meshB
-                    gc.collect()
-                    meshA = pymesh.load_mesh("meshA.obj")
-                    meshB = pymesh.load_mesh("meshB.obj")
-                # print("after")
 
             end_time = time.process_time()
 
-    print("Round " + str(j))
-    print("一共模拟 " + str(v) + " 个点")
-    print("相交体积为：" + str(meshA.volume) + "mm^3")
-    print("共运行：" + str(end_time - start_time) + "s")
+    if v != 0:
+        print("Round " + str(j))
+        print("一共模拟 " + str(v) + " 个点")
+        print("相交体积为：" + str(meshA.volume) + "mm^3")
+        print("共运行：" + str(end_time - start_time) + "s")
 
-    # # faces = [[0, 1, 2]]
-    # mesh = pv.make_tri_mesh(points, faces)
-    # # mesh = pyvista.wrap(tmesh)
-    # mesh.plot(show_edges=True, line_width=1)
 
-    del meshA, meshB
-    gc.collect()
+        del meshA, meshB
+        gc.collect()
+    else:
+        print('no intesection')
 
 

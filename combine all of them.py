@@ -153,13 +153,13 @@ pcd = o3d.io.read_point_cloud("Low_LoD.ply")
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(881, 886):
+for j in np.arange(969, 975):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
     start = points_coor[j]
     coneA = 0.00001
-    v = 1
+    v = 0
 
     for i in range(len(euler_ang)):
         rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
@@ -201,25 +201,27 @@ for j in np.arange(881, 886):
                     # v += 1
                     continue
 
-                print("working on " + str(v))
+                print("working on " + str(v + 1))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
                 meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
                 meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
+                meshA = pymesh.convex_hull(meshA, engine="auto")
 
                 v += 1
-                if v % 5 == 0 and v != 0:
-                    #release RAM per 5 round
-                    print("I am delete sometion")
-                    clean_mesh = fix_mesh(meshA, detail="low")
-
-                    pymesh.save_mesh("meshA.obj", clean_mesh)
-                    pymesh.save_mesh("meshB.obj", meshB)
-                    del meshA, meshB
-                    gc.collect()
-                    meshA = pymesh.load_mesh("meshA.obj")
-                    meshB = pymesh.load_mesh("meshB.obj")
-                print("after")
+                # if v % 5 == 0 and v != 0:
+                #     #release RAM per 5 round
+                #     print("I am delete sometion")
+                #     # clean_mesh = fix_mesh(meshA, detail="low")
+                #     clean_mesh = pymesh.convex_hull(meshA)
+                #
+                #     pymesh.save_mesh("meshA.obj", clean_mesh)
+                #     pymesh.save_mesh("meshB.obj", meshB)
+                #     del meshA, meshB
+                #     gc.collect()
+                #     meshA = pymesh.load_mesh("meshA.obj")
+                #     meshB = pymesh.load_mesh("meshB.obj")
+                # print("after")
 
             end_time = time.process_time()
 
@@ -227,22 +229,25 @@ for j in np.arange(881, 886):
 
     plotter.show()
 
-    points = np.asarray(meshA.vertices)
-    faces = np.asarray(meshA.faces)
+    if v != 0:
+        points = np.asarray(meshA.vertices)
+        faces = np.asarray(meshA.faces)
 
-    print(len(points))
-    # print(faces)
-    print("一共模拟 " + str(v) + " 个点")
-    print("相交体积为：" + str(meshA.volume) + "mm^3")
-    print("共运行：" + str(end_time - start_time) + "s")
+        print(len(points))
+        # print(faces)
+        print("一共模拟 " + str(v) + " 个点")
+        print("相交体积为：" + str(meshA.volume) + "mm^3")
+        print("共运行：" + str(end_time - start_time) + "s")
 
-    # faces = [[0, 1, 2]]
-    mesh = pv.make_tri_mesh(points, faces)
-    # mesh = pyvista.wrap(tmesh)
-    mesh.plot(show_edges=True, line_width=1)
+        # faces = [[0, 1, 2]]
+        mesh = pv.make_tri_mesh(points, faces)
+        # mesh = pyvista.wrap(tmesh)
+        mesh.plot(show_edges=True, line_width=1)
 
-    del meshA, meshB
-    gc.collect()
+        # del meshA, meshB
+        # gc.collect()
 
+    else:
+        print('no intesection')
 
 
