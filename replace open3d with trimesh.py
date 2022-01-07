@@ -5,7 +5,6 @@ from scipy.spatial import ConvexHull
 import open3d as o3d
 import copy
 from scipy.spatial.transform import Rotation as R
-import pymesh
 import time
 from numpy.linalg import norm
 import trimesh
@@ -26,7 +25,7 @@ print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
-data = pd.read_csv("internal_and_external_parameters_4.csv")
+data = pd.read_csv("internal_and_external_parameters_5.csv")
 print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
@@ -84,19 +83,20 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_tower = pv.read("Low_LoD.ply")
+mesh_tower = pv.read("1_7_1.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
-pcd = o3d.io.read_point_cloud("Low_LoD.ply")
+pcd = o3d.io.read_point_cloud("1_7_1.ply")
 
-mesh_for_trimesh = trimesh.load("Low_LoD.ply", force='mesh')
+mesh_for_trimesh = trimesh.load("1_7_LOD0.glb", force='mesh')
 trimesh_points = mesh_for_trimesh.vertices
 trimesh_triangle = mesh_for_trimesh.triangles
+vertices_normal = mesh_for_trimesh.vertex_normals
 
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(1024, 1034):
+for j in np.arange(2048, 2058):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
@@ -119,13 +119,10 @@ for j in np.arange(1024, 1034):
 
         if ind_cam.size:
             ray_dire = (start-stop)/1000
-            print("origins", stop)
-            print("ray_direction", ray_dire)
+            # print("origins", stop)
+            # print("ray_direction", ray_dire)
 
-            locations, index_ray, index_tri_lot = mesh_for_trimesh.ray.intersects_location(
-                ray_origins=[stop/1000],
-                ray_directions=[ray_dire])
-
+            # 判断 ray 和 mesh 第一个相交点是否为目标点
             index_tri = mesh_for_trimesh.ray.intersects_first(
                 ray_origins=[stop/1000],
                 ray_directions=[ray_dire])
@@ -134,9 +131,9 @@ for j in np.arange(1024, 1034):
             points_wanted = start/1000
 
             dis_check = tri_queried[0] - points_wanted
-            sum_dis_check = np.sum(dis_check, axis=1)
+            sum_dis_check = np.sum(dis_check**2, axis=1)
 
-            if np.any(sum_dis_check <= 0.0001) and len(locations) < 2:
+            if np.any(sum_dis_check <= 0.0001):
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
@@ -146,19 +143,27 @@ for j in np.arange(1024, 1034):
                                  point_size=15, label="Intersection Points")
                 plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
 
+                # 初始化第一个圆锥，并暂时跳出循环
                 if coneA == 0.00001:
                     coneA = useful_tools(cam_loc[i], points_coor[j], z_axis)
-                    meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
+                    meshA = trimesh.Trimesh(vertices=np.asarray(coneA.vertices), faces=np.asarray(coneA.triangles))
+                    # meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
                     print("new round started")
                     # v += 1
                     continue
 
                 print("working on " + str(v + 1))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
-                meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
+                meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
+                # meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
-                meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
-                meshA = pymesh.convex_hull(meshA, engine="auto")
+                # meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
+                # meshA = trimesh.boolean.intersection([meshA, meshB], engine='blender')
+                meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
+                meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
+                # meshA = trimesh.repair.fill_holes(meshA)
+                print(meshA.volume / meshA.convex_hull.volume)
+                # meshA = pymesh.convex_hull(meshA, engine="auto")
 
                 v += 1
 
@@ -183,8 +188,8 @@ for j in np.arange(1024, 1034):
         # mesh = pyvista.wrap(tmesh)
         mesh.plot(show_edges=True, line_width=1)
 
-        # del meshA, meshB
-        # gc.collect()
+        del meshA, meshB
+        gc.collect()
 
     else:
         print('no intesection')
