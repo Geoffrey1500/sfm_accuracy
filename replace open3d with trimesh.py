@@ -9,33 +9,6 @@ import trimesh
 import gc
 
 
-''' 
-大疆Phantom 4 Pro
-传感器大小：1英寸 13.2 mm x 8.8 mm
-分辨率：5472×3648
-像元大小：2.4123 um
-焦距：8.8 mm
-FOV：84°？
-'''
-
-print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
-
-w, h = 13.2, 8.8
-f = 8.8
-resol_x, resol_y = 5472, 3648
-data = pd.read_csv("data/internal_and_external_parameters_5.csv")
-print(data.head(5))
-cam_loc = data[["x", "y", "z"]].values*1000
-euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
-z_axis = np.array([0, 0, 1])
-
-'''
-Step 1: visibility check
-Step 2: cone generation
-Step 3: gaussian weighted euclidean distance calc
-'''
-
-
 def sensor_plane_point(points_per_side_=2, scale_factor_=300):
     # To create sensor plane
 
@@ -77,6 +50,32 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
 
     return cone_
 
+
+''' 
+大疆Phantom 4 Pro
+传感器大小：1英寸 13.2 mm x 8.8 mm
+分辨率：5472×3648
+像元大小：2.4123 um
+焦距：8.8 mm
+FOV：84°？
+'''
+
+print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
+
+w, h = 13.2, 8.8
+f = 8.8
+resol_x, resol_y = 5472, 3648
+data = pd.read_csv("data/internal_and_external_parameters_5.csv")
+print(data.head(5))
+cam_loc = data[["x", "y", "z"]].values*1000
+euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
+z_axis = np.array([0, 0, 1])
+
+'''
+Step 1: visibility check
+Step 2: cone generation
+Step 3: gaussian weighted euclidean distance calc
+'''
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
