@@ -23,7 +23,7 @@ print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
-data = pd.read_csv("internal_and_external_parameters_5.csv")
+data = pd.read_csv("data/internal_and_external_parameters_5.csv")
 print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
@@ -80,17 +80,17 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_tower = pv.read("1_7_2.ply")
+mesh_tower = pv.read("data/1_7_2.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
-pcd = o3d.io.read_point_cloud("1_7_2.ply")
+pcd = o3d.io.read_point_cloud("data/1_7_2.ply")
 
-mesh_for_trimesh = trimesh.load("1_7_2.glb", force='mesh')
+mesh_for_trimesh = trimesh.load("data/1_7_2.glb", force='mesh')
 trimesh_points = mesh_for_trimesh.vertices
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
 
-model_normal = pd.read_csv('1_7_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
+model_normal = pd.read_csv('data/1_7_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
 mesh_for_trimesh.vertex_normals = model_normal
 
 vertices_normal_after = mesh_for_trimesh.vertex_normals
