@@ -51,6 +51,15 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
     return cone_
 
 
+def vector_length(input_vector):
+    return np.sqrt(np.sum((comp ** 2) for comp in input_vector))
+
+
+def angle_between_vectors(v1, v2):
+    # return np.arccos(np.dot(v1, v2) / (vector_length(v1) * vector_length(v2))) * (180 / np.pi)
+    return np.dot(v1, v2) / (vector_length(v1) * vector_length(v2))
+
+
 ''' 
 大疆Phantom 4 Pro
 传感器大小：1英寸 13.2 mm x 8.8 mm
@@ -102,6 +111,7 @@ for j in np.arange(1024, 2058):
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
     start = points_coor[j]
+    start_vertex_normals = mesh_for_trimesh.vertex_normals[j]
     coneA = 0.00001
     v = 0
     start_time = time.process_time()
@@ -132,7 +142,10 @@ for j in np.arange(1024, 2058):
             dis_check = tri_queried[0] - points_wanted
             sum_dis_check = np.sum(dis_check**2, axis=1)
 
-            if np.any(sum_dis_check <= 0.0001):
+            # 加入射线与目标点法向量的限制，过滤掉夹角大于60度的射线
+
+            if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
+                # print("夹角为：" + str(angle_between_vectors(start_vertex_normals, (stop - start) / 1000)))
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
