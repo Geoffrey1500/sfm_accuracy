@@ -1,9 +1,7 @@
 import pyvista as pv
 import numpy as np
 import pandas as pd
-from scipy.spatial import ConvexHull
 import open3d as o3d
-import copy
 from scipy.spatial.transform import Rotation as R
 import time
 from numpy.linalg import norm
@@ -74,8 +72,7 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
     r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
     cone_.translate(tran_1_)
     cone_.rotate(r_, center=(0, 0, 0))
-    # print("what happend")
-    # print(tran_2_)
+
     cone_.translate(tran_2_)
 
     return cone_
@@ -83,20 +80,25 @@ def useful_tools(cam_, target_, axis_, scale_=2, cons_=0.0002, resolution=6):
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_tower = pv.read("1_7_1.ply")
+mesh_tower = pv.read("1_7_2.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
-pcd = o3d.io.read_point_cloud("1_7_1.ply")
+pcd = o3d.io.read_point_cloud("1_7_2.ply")
 
-mesh_for_trimesh = trimesh.load("1_7_LOD0.glb", force='mesh')
+mesh_for_trimesh = trimesh.load("1_7_2.glb", force='mesh')
 trimesh_points = mesh_for_trimesh.vertices
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
 
+model_normal = pd.read_csv('1_7_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
+mesh_for_trimesh.vertex_normals = model_normal
+
+vertices_normal_after = mesh_for_trimesh.vertex_normals
+
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(2048, 2058):
+for j in np.arange(1024, 2058):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
@@ -119,8 +121,6 @@ for j in np.arange(2048, 2058):
 
         if ind_cam.size:
             ray_dire = (start-stop)/1000
-            # print("origins", stop)
-            # print("ray_direction", ray_dire)
 
             # 判断 ray 和 mesh 第一个相交点是否为目标点
             index_tri = mesh_for_trimesh.ray.intersects_first(
@@ -147,23 +147,16 @@ for j in np.arange(2048, 2058):
                 if coneA == 0.00001:
                     coneA = useful_tools(cam_loc[i], points_coor[j], z_axis)
                     meshA = trimesh.Trimesh(vertices=np.asarray(coneA.vertices), faces=np.asarray(coneA.triangles))
-                    # meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
                     print("new round started")
-                    # v += 1
+
                     continue
 
                 print("working on " + str(v + 1))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
                 meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
-                # meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
-                # meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
-                # meshA = trimesh.boolean.intersection([meshA, meshB], engine='blender')
                 meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
                 meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
-                # meshA = trimesh.repair.fill_holes(meshA)
-                print(meshA.volume / meshA.convex_hull.volume)
-                # meshA = pymesh.convex_hull(meshA, engine="auto")
 
                 v += 1
 
@@ -180,6 +173,7 @@ for j in np.arange(2048, 2058):
         print(len(points))
         # print(faces)
         print("一共模拟 " + str(v) + " 个点")
+        print("总共有 " + str(v/len(cam_loc)*100) + "% 的相机参与运算")
         print("相交体积为：" + str(meshA.volume) + "mm^3")
         print("共运行：" + str(end_time - start_time) + "s")
 
@@ -192,6 +186,4 @@ for j in np.arange(2048, 2058):
         gc.collect()
 
     else:
-        print('no intesection')
-
-
+        print('no intersection')
