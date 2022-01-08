@@ -8,8 +8,8 @@ def gaussian(dist, mu=0, sigma=1.0):
     return (1/(sigma*np.sqrt(2*np.pi))) * np.e ** (-0.5*((dist-mu)/sigma)**2)
 
 
-pcd_base = o3d.io.read_point_cloud("Low_LoD.ply")
-pcd_ref = o3d.io.read_point_cloud("Sparse.ply")
+pcd_base = o3d.io.read_point_cloud("data/Low_LoD.ply")
+pcd_ref = o3d.io.read_point_cloud("data/Sparse.ply")
 
 core = pcd_base.points[1000]
 radius = 0.2

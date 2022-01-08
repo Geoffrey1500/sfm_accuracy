@@ -9,7 +9,7 @@ import trimesh
 import gc
 
 
-def sensor_plane_point(points_per_side_=2, scale_factor_=300):
+def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     # To create sensor plane
 
     x_ = np.linspace(-w/2*scale_factor_, w/2*scale_factor_, 3*points_per_side_)
@@ -74,7 +74,7 @@ print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
-data = pd.read_csv("data/internal_and_external_parameters_5.csv")
+data = pd.read_csv("data/camera_parameters.csv")
 print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
@@ -88,17 +88,17 @@ Step 3: gaussian weighted euclidean distance calc
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_tower = pv.read("data/1_7_2.ply")
+mesh_tower = pv.read("data/1_8_2.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
-pcd = o3d.io.read_point_cloud("data/1_7_2.ply")
+pcd = o3d.io.read_point_cloud("data/1_8_2.ply")
 
-mesh_for_trimesh = trimesh.load("data/1_7_2.glb", force='mesh')
-trimesh_points = mesh_for_trimesh.vertices
+mesh_for_trimesh = trimesh.load("data/1_8_2.glb", force='mesh')
+trimesh_points = mesh_for_trimesh.vertices*1000
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
 
-model_normal = pd.read_csv('data/1_7_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
+model_normal = pd.read_csv('data/1_8_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
 mesh_for_trimesh.vertex_normals = model_normal
 
 vertices_normal_after = mesh_for_trimesh.vertex_normals
@@ -106,7 +106,7 @@ vertices_normal_after = mesh_for_trimesh.vertex_normals
 points_coor = np.asarray(pcd.points)*1000
 points_color = np.asarray(pcd.colors)
 
-for j in np.arange(1024, 2058):
+for j in np.arange(4068, 4078):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_tower, show_edges=True, color="white")
 
@@ -143,9 +143,7 @@ for j in np.arange(1024, 2058):
             sum_dis_check = np.sum(dis_check**2, axis=1)
 
             # 加入射线与目标点法向量的限制，过滤掉夹角大于60度的射线
-
             if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
-                # print("夹角为：" + str(angle_between_vectors(start_vertex_normals, (stop - start) / 1000)))
                 sphere = pv.Sphere(radius=1000, center=cam_loc[i])
                 ray = pv.Line(start, stop)
                 intersection = pv.PolyData(point_cam)
@@ -163,7 +161,7 @@ for j in np.arange(1024, 2058):
 
                     continue
 
-                print("working on " + str(v + 1))
+                # print("working on " + str(v + 1))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis)
                 meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
 
