@@ -24,7 +24,7 @@ def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     return points_in_sensor_
 
 
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=4, resolution=6):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -42,7 +42,7 @@ def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=4,
     tran_2_ = target_
 
     radius_ = repro_err*pix_size_*(0.5*height_/focal_)
-    print("圆锥的投影半径 ", radius_)
+    # print("圆锥的投影半径 ", radius_)
 
     cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
     r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
@@ -52,6 +52,10 @@ def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=4,
     cone_.translate(tran_2_)
 
     return cone_
+
+
+def gaussian_dis(dist, sigma, mu=0):
+    return (1/(sigma*np.sqrt(2*np.pi))) * np.e ** (-0.5*((dist-mu)/sigma)**2)
 
 
 def vector_length(input_vector):
@@ -213,7 +217,9 @@ for j in np.arange(4068, 4078):
         dist_set = np.max(np.sqrt(np.sum((start.reshape((1, 3)) - points) ** 2, axis=1)))
 
         core_point = points_coor[j].reshape((1, 3))/1000
-        idx = kdt.query_radius(core_point, r=max_distance/1000)[0]
+        idx, dis_tree = kdt.query_radius(core_point, r=max_distance/1000, return_distance=True)
+        idx = idx[0]
+        dis_tree = dis_tree[0]
 
         neighbor_set = points_in_ref[idx]
 
@@ -223,17 +229,17 @@ for j in np.arange(4068, 4078):
         intersection_mesh = meshA.as_open3d
 
         core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=2.0).translate((core_point[0, 0]*1000, core_point[0, 1]*1000, core_point[0, 2]*1000))
-        o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
-                                          mesh_show_wireframe=True,
-                                          window_name='4 pixel')
+        # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
+        #                                   mesh_show_wireframe=True,
+        #                                   window_name='4 pixel')
 
         o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
                                           window_name='before filtered')
 
         signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
 
-        idx_inner = idx[np.argwhere(signed_dis > 0).flatten().tolist()]
-        neighbor_set_inner = points_in_ref[idx_inner]
+        idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
+        neighbor_set_inner = points_in_ref[idx[idx_inner]]
 
         pcd_neighbor_set_inner = o3d.geometry.PointCloud()
         pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
@@ -241,7 +247,15 @@ for j in np.arange(4068, 4078):
         o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
                                           window_name='filtered')
 
-        plotter.show()
+        gaussian_weight = np.array(gaussian_dis(signed_dis[idx_inner], sigma=7, mu=np.min(signed_dis[idx_inner])))
+        filtered_dis = np.array(dis_tree[idx_inner])*1000
+
+        average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
+
+        print("高斯加权平均后误差", average_dis, "mm")
+        print("直接平均值误差", np.average(filtered_dis), "mm")
+
+        # plotter.show()
         del meshA, meshB
         gc.collect()
 
