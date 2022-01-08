@@ -24,7 +24,7 @@ def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     return points_in_sensor_
 
 
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=4, resolution=6):
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -225,7 +225,7 @@ for j in np.arange(4068, 4078):
         core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=2.0).translate((core_point[0, 0]*1000, core_point[0, 1]*1000, core_point[0, 2]*1000))
         o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
                                           mesh_show_wireframe=True,
-                                          window_name='3 pixel')
+                                          window_name='4 pixel')
 
         o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
                                           window_name='before filtered')
@@ -236,7 +236,7 @@ for j in np.arange(4068, 4078):
         neighbor_set_inner = points_in_ref[idx_inner]
 
         pcd_neighbor_set_inner = o3d.geometry.PointCloud()
-        pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set)
+        pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
 
         o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
                                           window_name='filtered')
