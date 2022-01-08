@@ -211,7 +211,7 @@ for j in np.arange(4068, 4078):
         # faces = [[0, 1, 2]]
         mesh = pv.make_tri_mesh(points, faces)
         # mesh = pyvista.wrap(tmesh)
-        mesh.plot(show_edges=True, line_width=1)
+        # mesh.plot(show_edges=True, line_width=1)
 
         max_distance = np.max(distance_matrix(start.reshape((1, 3)), points))
         dist_set = np.max(np.sqrt(np.sum((start.reshape((1, 3)) - points) ** 2, axis=1)))
@@ -233,8 +233,8 @@ for j in np.arange(4068, 4078):
         #                                   mesh_show_wireframe=True,
         #                                   window_name='4 pixel')
 
-        o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
-                                          window_name='before filtered')
+        # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
+                                          # window_name='before filtered')
 
         signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
 
@@ -244,8 +244,8 @@ for j in np.arange(4068, 4078):
         pcd_neighbor_set_inner = o3d.geometry.PointCloud()
         pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
 
-        o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
-                                          window_name='filtered')
+        # o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
+                                          # window_name='filtered')
 
         gaussian_weight = np.array(gaussian_dis(signed_dis[idx_inner], sigma=7, mu=np.min(signed_dis[idx_inner])))
         filtered_dis = np.array(dis_tree[idx_inner])*1000
@@ -254,6 +254,7 @@ for j in np.arange(4068, 4078):
 
         print("高斯加权平均后误差", average_dis, "mm")
         print("直接平均值误差", np.average(filtered_dis), "mm")
+        print("临近点数量", len(dis_tree))
 
         # plotter.show()
         del meshA, meshB
