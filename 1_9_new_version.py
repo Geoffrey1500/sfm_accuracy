@@ -24,7 +24,7 @@ def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     return points_in_sensor_
 
 
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=2, resolution=6):
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -41,8 +41,8 @@ def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3,
     tran_1_ = [0, 0, -0.5*height_]
     tran_2_ = target_
 
-    radius_ = repro_err*pix_size_*(0.5*height_/focal_)
-    # print("圆锥的投影半径 ", radius_)
+    radius_ = repro_err*pix_size_*(height_/focal_)
+    # print("圆锥的投影半径 ", radius_/2)
 
     cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
     r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
@@ -213,13 +213,10 @@ for j in np.arange(4068, 4078):
         # faces = [[0, 1, 2]]
         mesh = pv.make_tri_mesh(points, faces)
         # mesh = pyvista.wrap(tmesh)
-        # mesh.plot(show_edges=True, line_width=1)
+        mesh.plot(show_edges=True, line_width=1)
 
-        max_distance = np.max(distance_matrix(start.reshape((1, 3)), points))
-        dist_set = np.max(np.sqrt(np.sum((start.reshape((1, 3)) - points) ** 2, axis=1)))
-
-        core_point = points_coor[j].reshape((1, 3))/1000
-        idx, dis_tree = kdt.query_radius(core_point, r=max_distance/1000, return_distance=True)
+        core_point = points_coor[j].reshape((1, 3))
+        dis_tree, idx = kdt.query(core_point/1000, k=density_ratio, return_distance=True)
         idx = idx[0]
         dis_tree = dis_tree[0]
 
@@ -230,35 +227,41 @@ for j in np.arange(4068, 4078):
 
         intersection_mesh = meshA.as_open3d
 
-        core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=2.0).translate((core_point[0, 0]*1000, core_point[0, 1]*1000, core_point[0, 2]*1000))
-        # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
-        #                                   mesh_show_wireframe=True,
-        #                                   window_name='4 pixel')
+        core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=2.0).translate((core_point[0, 0], core_point[0, 1], core_point[0, 2]))
+        o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
+                                          mesh_show_wireframe=True,
+                                          window_name='2 pixel')
 
-        # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
-                                          # window_name='before filtered')
+        o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
+                                          window_name='before filtered')
 
         signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
 
         idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
         neighbor_set_inner = points_in_ref[idx[idx_inner]]
 
+        filt_nebor_cent = np.mean(neighbor_set_inner, axis=0)
+        neighbor_set_centroid = o3d.geometry.TriangleMesh.create_sphere(radius=1.0).translate(
+            (filt_nebor_cent[0], filt_nebor_cent[1], filt_nebor_cent[2]))
+
         pcd_neighbor_set_inner = o3d.geometry.PointCloud()
         pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
 
-        # o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
-                                          # window_name='filtered')
+        o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target, neighbor_set_centroid],
+                                          window_name='filtered')
 
-        gaussian_weight = np.array(gaussian_dis(signed_dis[idx_inner], sigma=7, mu=np.min(signed_dis[idx_inner])))
         filtered_dis = np.array(dis_tree[idx_inner])*1000
-
+        gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
         average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
+
+        dis_to_cent = np.sqrt(np.sum((filt_nebor_cent-core_point)**2, axis=1))
 
         print("高斯加权平均后误差", average_dis, "mm")
         print("直接平均值误差", np.average(filtered_dis), "mm")
+        print("点到质心的距离 ", dis_to_cent)
         print("临近点数量", len(dis_tree))
 
-        # plotter.show()
+        plotter.show()
         del meshA, meshB
         gc.collect()
 
