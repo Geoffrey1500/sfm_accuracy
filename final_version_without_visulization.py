@@ -71,18 +71,6 @@ def grab_tree(filename):
     return pickle.load(fr)
 
 
-def error_project(vector_):
-    x_axis_ = np.array([1, 0, 0])
-    y_axis_ = np.array([0, 1, 0])
-    z_axis_ = np.array([0, 0, 1])
-
-    error_x_ = x_axis_ * np.dot(vector_, x_axis_) / np.dot(x_axis_, x_axis_)
-    error_y_ = y_axis_ * np.dot(vector_, y_axis_) / np.dot(y_axis_, y_axis_)
-    error_z_ = z_axis_ * np.dot(vector_, z_axis_) / np.dot(z_axis_, z_axis_)
-
-    return error_x_[0], error_y_[1], error_z_[2]
-
-
 ''' 
 大疆Phantom 4 Pro
 传感器大小：1英寸 13.2 mm x 8.8 mm
@@ -135,15 +123,15 @@ print("读取knn树总耗时 ：" + str(end_time - start_time) + "s")
 
 vertices_normal_after = mesh_for_trimesh.vertex_normals
 
-error_collection = []
+error_collection = np.zeros((1, 8))
 neibor_index_set = []
 
-for j in np.arange(4068, 4078):
+for j in np.arange(4068, 4088):
     start = points_coor[j]
     start_vertex_normals = mesh_for_trimesh.vertex_normals[j]
     coneA = 0.00001
     v = 0
-    start_time = time.process_time()
+    start_time = time.time()
 
     for i in range(len(euler_ang)):
         rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
@@ -186,59 +174,79 @@ for j in np.arange(4068, 4078):
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis, pix_size_=pixel_size, focal_=f)
                 meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
 
+                boolean_start_time = time.time()
                 meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
+                boolean_end_time = time.time()
+                print("布尔运算用时：", boolean_end_time - boolean_start_time, "s")
+
+                convex_start_time = time.time()
                 meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
+                convex_end_time = time.time()
+                print("凸包运算用时：", convex_end_time-convex_start_time, "s")
 
                 v += 1
 
-    end_time = time.process_time()
+    end_time = time.time()
 
     if v != 0:
         print("一共模拟 " + str(v) + " 个相机")
         print("总共有 " + str(v/len(cam_loc)*100) + "% 的相机参与运算")
-        print("相交体积为：" + str(meshA.volume) + "mm^3")
-        print("共运行：" + str(end_time - start_time) + "s")
+        print("求交集共运行：" + str(end_time - start_time) + "s")
 
+        start_time = time.time()
         core_point = points_coor[j].reshape((1, 3))
         dis_tree, idx = kdt.query(core_point/1000, k=density_ratio, return_distance=True)
         idx = idx[0]
         dis_tree = dis_tree[0]
+        end_time = time.time()
+        print("临近点搜寻共运行：" + str(end_time - start_time) + "s")
 
         neighbor_set = points_in_ref[idx]
 
-        pcd_neighbor_set = o3d.geometry.PointCloud()
-        pcd_neighbor_set.points = o3d.utility.Vector3dVector(neighbor_set)
-
-        intersection_mesh = meshA.as_open3d
-
+        start_time = time.time()
         signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
-
         idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
         neighbor_set_inner = points_in_ref[idx[idx_inner]]
+        end_time = time.time()
+        print("临近点过滤共运行：" + str(end_time - start_time) + "s")
 
         filt_nebor_cent = np.mean(neighbor_set_inner, axis=0)
+        dis_to_cent = np.sqrt(np.sum((core_point - filt_nebor_cent) ** 2, axis=1))
+        err_x, err_y, err_z = core_point[0] - filt_nebor_cent
 
+        start_time = time.time()
         filtered_dis = np.array(dis_tree[idx_inner])*1000
         gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
-        average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
+        gaussian_average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
+        end_time = time.time()
+        print("计算高斯平均距离用时：：" + str(end_time - start_time) + "s")
 
-        dis_to_cent = np.sqrt(np.sum((core_point-filt_nebor_cent)**2, axis=1))
+        average_dis = np.average(filtered_dis)
 
-        err_x, err_y, err_z = error_project(core_point-filt_nebor_cent)
+        # print("高斯加权平均后误差", gaussian_average_dis, "mm")
+        # print("直接平均值误差", average_dis, "mm")
+        # print("点到质心的距离 ", dis_to_cent)
+        # print("误差分量，x, y, z ", err_x, err_y, err_z)
+        # print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
+        # print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
 
-        print("高斯加权平均后误差", average_dis, "mm")
-        print("直接平均值误差", np.average(filtered_dis), "mm")
-        print("点到质心的距离 ", dis_to_cent)
-        print("误差分量，x, y, z ", err_x, err_y, err_z)
-        print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
-        print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
+        points_and_error = np.hstack((core_point, np.array([[err_x, err_y, err_z, gaussian_average_dis, average_dis]])))
+        error_collection = np.append(error_collection, points_and_error, axis=0)
 
-        print("过滤前邻近点数量", len(dis_tree))
-        print("过滤后邻近点数量", len(neighbor_set_inner))
+        neibor_index_set.append(idx[idx_inner].tolist())
 
         del meshA, meshB
         gc.collect()
-
     else:
         print('no intersection')
 
+    if j % 5 == 0:
+
+        title_1 = "result_" + str(j) + ".csv"
+        title_2 = "neighbor_set_index_" + str(j) + ".csv"
+
+        start_time = time.process_time()
+        pd.DataFrame(error_collection).to_csv('result/' + title_1, index=False, header=False)
+        df = pd.DataFrame(data=neibor_index_set)
+        df.to_csv('result/' + title_2, index=False, header=False)
+        print("保存数据花费时间：" + str(end_time - start_time) + "s")
