@@ -7,8 +7,6 @@ import time
 from numpy.linalg import norm
 import trimesh
 import gc
-from scipy.spatial import distance_matrix
-from sklearn.neighbors import KDTree
 
 
 def sensor_plane_point(points_per_side_=2, scale_factor_=200):
@@ -72,6 +70,19 @@ def grab_tree(filename):
     fr = open(filename, 'rb')
     return pickle.load(fr)
 
+
+def error_project(vector_):
+    x_axis_ = np.array([1, 0, 0])
+    y_axis_ = np.array([0, 1, 0])
+    z_axis_ = np.array([0, 0, 1])
+
+    error_x_ = x_axis_ * np.dot(vector_, x_axis_) / np.dot(x_axis_, x_axis_)
+    error_y_ = y_axis_ * np.dot(vector_, y_axis_) / np.dot(y_axis_, y_axis_)
+    error_z_ = z_axis_ * np.dot(vector_, z_axis_) / np.dot(z_axis_, z_axis_)
+
+    return error_x_[0], error_y_[1], error_z_[2]
+
+
 ''' 
 大疆Phantom 4 Pro
 传感器大小：1英寸 13.2 mm x 8.8 mm
@@ -124,6 +135,8 @@ print("读取knn树总耗时 ：" + str(end_time - start_time) + "s")
 
 vertices_normal_after = mesh_for_trimesh.vertex_normals
 
+error_collection = []
+neibor_index_set = []
 
 for j in np.arange(4068, 4078):
     start = points_coor[j]
@@ -181,7 +194,7 @@ for j in np.arange(4068, 4078):
     end_time = time.process_time()
 
     if v != 0:
-        print("一共模拟 " + str(v) + " 个点")
+        print("一共模拟 " + str(v) + " 个相机")
         print("总共有 " + str(v/len(cam_loc)*100) + "% 的相机参与运算")
         print("相交体积为：" + str(meshA.volume) + "mm^3")
         print("共运行：" + str(end_time - start_time) + "s")
@@ -209,11 +222,17 @@ for j in np.arange(4068, 4078):
         gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
         average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
 
-        dis_to_cent = np.sqrt(np.sum((filt_nebor_cent-core_point)**2, axis=1))
+        dis_to_cent = np.sqrt(np.sum((core_point-filt_nebor_cent)**2, axis=1))
+
+        err_x, err_y, err_z = error_project(core_point-filt_nebor_cent)
 
         print("高斯加权平均后误差", average_dis, "mm")
         print("直接平均值误差", np.average(filtered_dis), "mm")
         print("点到质心的距离 ", dis_to_cent)
+        print("误差分量，x, y, z ", err_x, err_y, err_z)
+        print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
+        print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
+
         print("过滤前邻近点数量", len(dis_tree))
         print("过滤后邻近点数量", len(neighbor_set_inner))
 
@@ -222,3 +241,4 @@ for j in np.arange(4068, 4078):
 
     else:
         print('no intersection')
+
