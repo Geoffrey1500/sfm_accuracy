@@ -40,7 +40,9 @@ def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=2,
     tran_1_ = [0, 0, -0.5*height_]
     tran_2_ = target_
 
-    radius_ = repro_err*pix_size_*(height_/focal_)
+    # 内接圆与外切圆半径转换
+    radius_scale = np.sin(np.pi*((resolution-2)/resolution))
+    radius_ = repro_err*pix_size_*(height_/focal_)/radius_scale
     # print("圆锥的投影半径 ", radius_/2)
 
     cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
@@ -127,7 +129,8 @@ vertices_normal_after = mesh_for_trimesh.vertex_normals
 error_collection = np.zeros((1, 8))
 neibor_index_set = []
 
-for j in np.arange(4068, 4088):
+# for j in np.arange(4068, 4088):
+for j in range(len(points_coor)):
     start = points_coor[j]
     start_vertex_normals = mesh_for_trimesh.vertex_normals[j]
     coneA = 0.00001
@@ -177,10 +180,10 @@ for j in np.arange(4068, 4088):
                 # meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
                 meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
-                boolean_start_time = time.time()
+                # boolean_start_time = time.time()
                 # meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
                 meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
-                boolean_end_time = time.time()
+                # boolean_end_time = time.time()
                 # print("布尔运算用时：", boolean_end_time - boolean_start_time, "s")
 
                 convex_start_time = time.time()
@@ -210,25 +213,25 @@ for j in np.arange(4068, 4088):
 
         final_mesh = trimesh.Trimesh(vertices=meshA.vertices, faces=meshA.faces)
 
-        start_time = time.time()
+        # start_time = time.time()
         signed_dis = trimesh.proximity.signed_distance(final_mesh, points_in_ref[idx])
         idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
+        # end_time = time.time()
+        # print("临近点过滤共运行：" + str(end_time - start_time) + "s")
 
         if idx_inner:
             neighbor_set_inner = points_in_ref[idx[idx_inner]]
-            end_time = time.time()
-            print("临近点过滤共运行：" + str(end_time - start_time) + "s")
 
             filt_nebor_cent = np.mean(neighbor_set_inner, axis=0)
             dis_to_cent = np.sqrt(np.sum((core_point - filt_nebor_cent) ** 2, axis=1))
             err_x, err_y, err_z = core_point[0] - filt_nebor_cent
 
-            start_time = time.time()
+            # start_time = time.time()
             filtered_dis = np.array(dis_tree[idx_inner])*1000
             gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
             gaussian_average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
-            end_time = time.time()
-            print("计算高斯平均距离用时：" + str(end_time - start_time) + "s")
+            # end_time = time.time()
+            # print("计算高斯平均距离用时：" + str(end_time - start_time) + "s")
 
             average_dis = np.average(filtered_dis)
 
@@ -257,13 +260,11 @@ for j in np.arange(4068, 4088):
         neibor_index_set.append([0])
         print('no intersection')
 
-    if j % 5 == 0:
+    if j % 1000 == 0:
 
         title_1 = "result_" + str(j) + ".csv"
         title_2 = "neighbor_set_index_" + str(j) + ".csv"
 
-        start_time = time.process_time()
         pd.DataFrame(error_collection).to_csv('result/' + title_1, index=False, header=False)
         df = pd.DataFrame(data=neibor_index_set)
         df.to_csv('result/' + title_2, index=False, header=False)
-        print("保存数据花费时间：" + str(end_time - start_time) + "s")
