@@ -7,6 +7,7 @@ import time
 from numpy.linalg import norm
 import trimesh
 import gc
+import pymesh
 
 
 def sensor_plane_point(points_per_side_=2, scale_factor_=200):
@@ -165,22 +166,26 @@ for j in np.arange(4068, 4088):
                 # 初始化第一个圆锥，并暂时跳出循环
                 if coneA == 0.00001:
                     coneA = useful_tools(cam_loc[i], points_coor[j], z_axis, pix_size_=pixel_size, focal_=f)
-                    meshA = trimesh.Trimesh(vertices=np.asarray(coneA.vertices), faces=np.asarray(coneA.triangles))
+                    # meshA = trimesh.Trimesh(vertices=np.asarray(coneA.vertices), faces=np.asarray(coneA.triangles))
+                    meshA = pymesh.form_mesh(np.asarray(coneA.vertices), np.asarray(coneA.triangles))
                     print("new round started")
 
                     continue
 
                 # print("working on " + str(v + 1))
                 coneB = useful_tools(cam_loc[i], points_coor[j], z_axis, pix_size_=pixel_size, focal_=f)
-                meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
+                # meshB = trimesh.Trimesh(vertices=np.asarray(coneB.vertices), faces=np.asarray(coneB.triangles))
+                meshB = pymesh.form_mesh(np.asarray(coneB.vertices), np.asarray(coneB.triangles))
 
                 boolean_start_time = time.time()
-                meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
+                # meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
+                meshA = pymesh.boolean(meshA, meshB, operation="intersection", engine="igl")
                 boolean_end_time = time.time()
                 # print("布尔运算用时：", boolean_end_time - boolean_start_time, "s")
 
                 convex_start_time = time.time()
-                meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
+                # meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
+                meshA = pymesh.convex_hull(meshA, engine="auto")
                 convex_end_time = time.time()
                 # print("凸包运算用时：", convex_end_time-convex_start_time, "s")
 
@@ -203,8 +208,10 @@ for j in np.arange(4068, 4088):
 
         neighbor_set = points_in_ref[idx]
 
+        final_mesh = trimesh.Trimesh(vertices=meshA.vertices, faces=meshA.faces)
+
         start_time = time.time()
-        signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
+        signed_dis = trimesh.proximity.signed_distance(final_mesh, points_in_ref[idx])
         idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
 
         if idx_inner:
@@ -242,7 +249,7 @@ for j in np.arange(4068, 4088):
             error_collection = np.append(error_collection, points_and_error, axis=0)
             neibor_index_set.append([0])
 
-        del meshA, meshB
+        del meshA, meshB, final_mesh
         gc.collect()
     else:
         points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0]])))
