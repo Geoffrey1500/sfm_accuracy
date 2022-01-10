@@ -177,12 +177,12 @@ for j in np.arange(4068, 4088):
                 boolean_start_time = time.time()
                 meshA = trimesh.boolean.intersection([meshA, meshB], engine='scad')
                 boolean_end_time = time.time()
-                print("布尔运算用时：", boolean_end_time - boolean_start_time, "s")
+                # print("布尔运算用时：", boolean_end_time - boolean_start_time, "s")
 
                 convex_start_time = time.time()
                 meshA = trimesh.convex.convex_hull(meshA, qhull_options='Qt')
                 convex_end_time = time.time()
-                print("凸包运算用时：", convex_end_time-convex_start_time, "s")
+                # print("凸包运算用时：", convex_end_time-convex_start_time, "s")
 
                 v += 1
 
@@ -206,38 +206,48 @@ for j in np.arange(4068, 4088):
         start_time = time.time()
         signed_dis = trimesh.proximity.signed_distance(meshA, points_in_ref[idx])
         idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
-        neighbor_set_inner = points_in_ref[idx[idx_inner]]
-        end_time = time.time()
-        print("临近点过滤共运行：" + str(end_time - start_time) + "s")
 
-        filt_nebor_cent = np.mean(neighbor_set_inner, axis=0)
-        dis_to_cent = np.sqrt(np.sum((core_point - filt_nebor_cent) ** 2, axis=1))
-        err_x, err_y, err_z = core_point[0] - filt_nebor_cent
+        if idx_inner:
+            neighbor_set_inner = points_in_ref[idx[idx_inner]]
+            end_time = time.time()
+            print("临近点过滤共运行：" + str(end_time - start_time) + "s")
 
-        start_time = time.time()
-        filtered_dis = np.array(dis_tree[idx_inner])*1000
-        gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
-        gaussian_average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
-        end_time = time.time()
-        print("计算高斯平均距离用时：：" + str(end_time - start_time) + "s")
+            filt_nebor_cent = np.mean(neighbor_set_inner, axis=0)
+            dis_to_cent = np.sqrt(np.sum((core_point - filt_nebor_cent) ** 2, axis=1))
+            err_x, err_y, err_z = core_point[0] - filt_nebor_cent
 
-        average_dis = np.average(filtered_dis)
+            start_time = time.time()
+            filtered_dis = np.array(dis_tree[idx_inner])*1000
+            gaussian_weight = np.array(gaussian_dis(filtered_dis, sigma=7, mu=np.min(signed_dis[idx_inner])))
+            gaussian_average_dis = np.sum(gaussian_weight*filtered_dis)/np.sum(gaussian_weight)
+            end_time = time.time()
+            print("计算高斯平均距离用时：" + str(end_time - start_time) + "s")
 
-        # print("高斯加权平均后误差", gaussian_average_dis, "mm")
-        # print("直接平均值误差", average_dis, "mm")
-        # print("点到质心的距离 ", dis_to_cent)
-        # print("误差分量，x, y, z ", err_x, err_y, err_z)
-        # print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
-        # print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
+            average_dis = np.average(filtered_dis)
 
-        points_and_error = np.hstack((core_point, np.array([[err_x, err_y, err_z, gaussian_average_dis, average_dis]])))
-        error_collection = np.append(error_collection, points_and_error, axis=0)
+            # print("高斯加权平均后误差", gaussian_average_dis, "mm")
+            # print("直接平均值误差", average_dis, "mm")
+            # print("点到质心的距离 ", dis_to_cent)
+            # print("误差分量，x, y, z ", err_x, err_y, err_z)
+            # print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
+            # print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
 
-        neibor_index_set.append(idx[idx_inner].tolist())
+            points_and_error = np.hstack((core_point, np.array([[err_x, err_y, err_z, gaussian_average_dis, average_dis]])))
+            error_collection = np.append(error_collection, points_and_error, axis=0)
+
+            neibor_index_set.append(idx[idx_inner].tolist())
+        else:
+            print("过滤后没有临近点")
+            points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0]])))
+            error_collection = np.append(error_collection, points_and_error, axis=0)
+            neibor_index_set.append([0])
 
         del meshA, meshB
         gc.collect()
     else:
+        points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0]])))
+        error_collection = np.append(error_collection, points_and_error, axis=0)
+        neibor_index_set.append([0])
         print('no intersection')
 
     if j % 5 == 0:
