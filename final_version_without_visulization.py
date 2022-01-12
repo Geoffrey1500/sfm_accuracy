@@ -84,6 +84,11 @@ def grab_tree(filename):
 FOV：84°？
 '''
 
+regits_matrix = np.array([[1, 0, 0.001, 0],
+                          [0, 1, 0.008, -0.002],
+                          [-0.001, -0.008, 1, 0],
+                          [0, 0, 0, 1]])
+
 print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 
 w, h = 13.2, 8.8
@@ -92,7 +97,8 @@ resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
 data = pd.read_csv("data/camera_parameters.csv")
 print(data.head(5))
-cam_loc = data[["x", "y", "z"]].values*1000
+cam_loc_before = data[["x", "y", "z"]].values
+cam_loc = np.dot(regits_matrix, np.vstack((cam_loc_before.T, np.ones((1, len(cam_loc_before))))))[0:-1, :].T*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
 z_axis = np.array([0, 0, 1])
 
@@ -104,7 +110,7 @@ Step 3: gaussian weighted euclidean distance calc
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_for_trimesh = trimesh.load("data/1_8_2.glb", force='mesh')
+mesh_for_trimesh = trimesh.load("data/1_8_2.glb", force='mesh').apply_transform(regits_matrix)
 points_coor = np.asarray(mesh_for_trimesh.vertices)*1000
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
@@ -165,7 +171,8 @@ for j in np.arange(len(points_coor)):
             sum_dis_check = np.sum(dis_check**2, axis=1)
 
             # 加入射线与目标点法向量的限制，过滤掉夹角大于30度的射线
-            if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
+            if np.any(sum_dis_check <= 0.0001) and \
+                    angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
 
                 # 初始化第一个圆锥，并暂时跳出循环
                 if coneA == 0.00001:
@@ -199,18 +206,18 @@ for j in np.arange(len(points_coor)):
 
     end_time = time.time()
 
-    if v != 0:
+    if v > 4:
         print("一共模拟 " + str(v) + " 个相机")
-        print("总共有 " + str(v/len(cam_loc)*100) + "% 的相机参与运算")
+        # print("总共有 " + str(v/len(cam_loc)*100) + "% 的相机参与运算")
         print("求交集共运行：" + str(end_time - start_time) + "s")
 
-        start_time = time.time()
+        # start_time = time.time()
         core_point = points_coor[j].reshape((1, 3))
         dis_tree, idx = kdt.query(core_point/1000, k=density_ratio, return_distance=True)
         idx = idx[0]
         dis_tree = dis_tree[0]
-        end_time = time.time()
-        print("临近点搜寻共运行：" + str(end_time - start_time) + "s")
+        # end_time = time.time()
+        # print("临近点搜寻共运行：" + str(end_time - start_time) + "s")
 
         neighbor_set = points_in_ref[idx]
 
@@ -238,9 +245,9 @@ for j in np.arange(len(points_coor)):
 
             average_dis = np.average(filtered_dis)
 
-            # print("高斯加权平均后误差", gaussian_average_dis, "mm")
-            # print("直接平均值误差", average_dis, "mm")
-            # print("点到质心的距离 ", dis_to_cent)
+            print("高斯加权平均后误差", gaussian_average_dis, "mm")
+            print("直接平均值误差", average_dis, "mm")
+            print("点到质心的距离 ", dis_to_cent)
             # print("误差分量，x, y, z ", err_x, err_y, err_z)
             # print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
             # print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
@@ -251,28 +258,20 @@ for j in np.arange(len(points_coor)):
             # neibor_index_set.append(idx[idx_inner].tolist())
         else:
             print("过滤后没有临近点")
-            points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0, 0]])))
-            error_collection = np.append(error_collection, points_and_error, axis=0)
+            # points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0, 0]])))
+            # error_collection = np.append(error_collection, points_and_error, axis=0)
             # neibor_index_set.append([0])
 
         del meshA, meshB, final_mesh
         gc.collect()
     else:
-        points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0, 0]])))
-        error_collection = np.append(error_collection, points_and_error, axis=0)
+        # points_and_error = np.hstack((start.reshape((1, 3)), np.array([[0, 0, 0, 0, 0, 0]])))
+        # error_collection = np.append(error_collection, points_and_error, axis=0)
         # neibor_index_set.append([0])
         print('no intersection')
 
-    if j % 1000 == 0:
+    if j % 1000 == 0 or j == len(points_coor)-1:
 
-        title_1 = "result_" + str(j) + ".csv"
-        title_2 = "neighbor_set_index_" + str(j) + ".csv"
-
-        pd.DataFrame(error_collection).to_csv('result/' + title_1, index=False, header=False)
-        # df = pd.DataFrame(data=neibor_index_set)
-        # df.to_csv('result/' + title_2, index=False, header=False)
-
-    if j == len(points_coor)-1:
         title_1 = "result_" + str(j) + ".csv"
         title_2 = "neighbor_set_index_" + str(j) + ".csv"
 
