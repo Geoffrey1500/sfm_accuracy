@@ -24,7 +24,7 @@ def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     return points_in_sensor_
 
 
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=2, resolution=6):
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -252,7 +252,7 @@ for j in np.arange(len(points_coor)):
             # print("水平方向误差", np.sqrt(err_x ** 2 + err_y ** 2))
             # print("纵向与横向误差比值", np.abs(err_z)/np.sqrt(err_x ** 2 + err_y ** 2))
 
-            points_and_error = np.hstack((core_point, np.array([[err_x, err_y, err_z, gaussian_average_dis, average_dis, v]])))
+            points_and_error = np.hstack((core_point/1000, np.array([[err_x, err_y, err_z, gaussian_average_dis, average_dis, v]])))
             error_collection = np.append(error_collection, points_and_error, axis=0)
 
             # neibor_index_set.append(idx[idx_inner].tolist())
