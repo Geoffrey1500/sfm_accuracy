@@ -87,7 +87,7 @@ w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
-data = pd.read_csv("data/camera_parameters.csv")
+data = pd.read_csv("data/UAV_only_B.csv")
 print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
@@ -101,27 +101,27 @@ Step 3: gaussian weighted euclidean distance calc
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_tower = pv.read("data/1_8_2.ply")
+mesh_tower = pv.read("data/Sonly_only_B.ply")
 mesh_tower.scale([1000, 1000, 1000])
 
-pcd = o3d.io.read_point_cloud("data/1_8_2.ply")
+pcd = o3d.io.read_point_cloud("data/Sonly_only_B.ply")
 
-mesh_for_trimesh = trimesh.load("data/1_8_2.glb", force='mesh')
+mesh_for_trimesh = trimesh.load("data/UAV_only_B.glb", force='mesh')
 trimesh_points = mesh_for_trimesh.vertices*1000
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
 
-model_normal = pd.read_csv('data/1_8_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
+model_normal = pd.read_csv('data/UAV_only_B.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
 mesh_for_trimesh.vertex_normals = model_normal
 
 start_time = time.process_time()
-pcd_ref = o3d.io.read_point_cloud("data/1_8_2_df - point.pcd")
+pcd_ref = o3d.io.read_point_cloud("data/Sony_ref.pcd")
 end_time = time.process_time()
 print("读取参考点云数据总耗时 ：" + str(end_time - start_time) + "s")
 points_in_ref = np.asarray(pcd_ref.points) * 1000
 
 start_time = time.process_time()
-kdt = grab_tree("tree.txt")
+kdt = grab_tree("tree_3.txt")
 end_time = time.process_time()
 print("读取knn树总耗时 ：" + str(end_time - start_time) + "s")
 
@@ -153,6 +153,15 @@ for j in np.arange(4068, 4078):
         # Perform ray trace for sensor plane
         point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
 
+        sphere = pv.Sphere(radius=1000, center=cam_loc[i])
+        ray = pv.Line(start, stop)
+        # intersection = pv.PolyData(point_cam)
+        plotter.add_mesh(sphere, color="red", opacity=1)
+        plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=1)
+        # plotter.add_mesh(intersection, color="blue",
+                         # point_size=15, label="Intersection Points")
+        plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
+
         if ind_cam.size:
             ray_dire = (start-stop)/1000
 
@@ -169,14 +178,14 @@ for j in np.arange(4068, 4078):
 
             # 加入射线与目标点法向量的限制，过滤掉夹角大于60度的射线
             if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
-                sphere = pv.Sphere(radius=1000, center=cam_loc[i])
-                ray = pv.Line(start, stop)
-                intersection = pv.PolyData(point_cam)
-                plotter.add_mesh(sphere, color="red", opacity=1)
-                plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=1)
-                plotter.add_mesh(intersection, color="blue",
-                                 point_size=15, label="Intersection Points")
-                plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
+                # sphere = pv.Sphere(radius=1000, center=cam_loc[i])
+                # ray = pv.Line(start, stop)
+                # intersection = pv.PolyData(point_cam)
+                # plotter.add_mesh(sphere, color="red", opacity=1)
+                # plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=1)
+                # plotter.add_mesh(intersection, color="blue",
+                #                  point_size=15, label="Intersection Points")
+                # plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
 
                 # 初始化第一个圆锥，并暂时跳出循环
                 if coneA == 0.00001:

@@ -84,9 +84,9 @@ def grab_tree(filename):
 FOV：84°？
 '''
 
-regits_matrix = np.array([[1, 0, 0.001, 0],
-                          [0, 1, 0.008, -0.002],
-                          [-0.001, -0.008, 1, 0],
+regits_matrix = np.array([[1, 0, 0, 0],
+                          [0, 1, 0, 0],
+                          [0, 0, 1, 0],
                           [0, 0, 0, 1]])
 
 print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
@@ -95,7 +95,7 @@ w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
-data = pd.read_csv("data/camera_parameters.csv")
+data = pd.read_csv("data/UAV_only_B.csv")
 print(data.head(5))
 cam_loc_before = data[["x", "y", "z"]].values
 cam_loc = np.dot(regits_matrix, np.vstack((cam_loc_before.T, np.ones((1, len(cam_loc_before))))))[0:-1, :].T*1000
@@ -110,16 +110,16 @@ Step 3: gaussian weighted euclidean distance calc
 
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-mesh_for_trimesh = trimesh.load("data/1_8_2.glb", force='mesh').apply_transform(regits_matrix)
+mesh_for_trimesh = trimesh.load("data/UAV_only_B.glb", force='mesh').apply_transform(regits_matrix)
 points_coor = np.asarray(mesh_for_trimesh.vertices)*1000
 trimesh_triangle = mesh_for_trimesh.triangles
 vertices_normal = mesh_for_trimesh.vertex_normals
 
-model_normal = pd.read_csv('data/1_8_2.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
+model_normal = pd.read_csv('data/UAV_only_B.xyz', header=None, sep=' ').to_numpy()[:, 3:6]
 mesh_for_trimesh.vertex_normals = model_normal
 
 start_time = time.process_time()
-pcd_ref = o3d.io.read_point_cloud("data/1_8_2_df - point.pcd")
+pcd_ref = o3d.io.read_point_cloud("data/Sony_ref.pcd")
 end_time = time.process_time()
 print("读取参考点云数据总耗时 ：" + str(end_time - start_time) + "s")
 points_in_ref = np.asarray(pcd_ref.points) * 1000
@@ -127,7 +127,7 @@ points_in_ref = np.asarray(pcd_ref.points) * 1000
 density_ratio = int(len(points_in_ref)/len(points_coor))
 
 start_time = time.process_time()
-kdt = grab_tree("tree.txt")
+kdt = grab_tree("tree_3.txt")
 end_time = time.process_time()
 print("读取knn树总耗时 ：" + str(end_time - start_time) + "s")
 
@@ -137,7 +137,8 @@ error_collection = np.zeros((1, 9))
 neibor_index_set = []
 
 # for j in np.arange(4068, 4088):
-for j in np.arange(len(points_coor)):
+# for j in np.arange(0, len(points_coor)):
+for j in np.arange(0, 40001):
     start = points_coor[j]
     start_vertex_normals = mesh_for_trimesh.vertex_normals[j]
     coneA = 0.00001
@@ -270,7 +271,7 @@ for j in np.arange(len(points_coor)):
         # neibor_index_set.append([0])
         print('no intersection')
 
-    if j % 1000 == 0 or j == len(points_coor)-1:
+    if j % 1000 == 0 or j == 40000:
 
         title_1 = "result_" + str(j) + ".csv"
         title_2 = "neighbor_set_index_" + str(j) + ".csv"

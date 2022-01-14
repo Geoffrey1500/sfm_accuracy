@@ -26,11 +26,11 @@ def grabTree(filename):
     return pickle.load(fr)
 
 
-pcd_base = o3d.io.read_point_cloud("data/1_8_2.ply")
-point_base = np.asarray(pcd_base.points)
+# pcd_base = o3d.io.read_point_cloud("data/UAV_only_B.xyzrgb")
+# point_base = np.asarray(pcd_base.points)
 
 start_time = time.process_time()
-pcd_ref = o3d.io.read_point_cloud("data/1_8_2_df - point.pcd")
+pcd_ref = o3d.io.read_point_cloud("data/Sony_ref.pcd")
 end_time = time.process_time()
 print("读取点云数据总耗时 ：" + str(end_time - start_time) + "s")
 points_in_ref = np.asarray(pcd_ref.points)
@@ -38,8 +38,8 @@ points_in_ref = np.asarray(pcd_ref.points)
 points = pcd_ref.points
 
 # core = points_in_ref[5000]
-# core = np.array([[-2606.13036, -1718.20796, 280.52866]])/1000
-core = point_base[4086]
+core = np.array([[5.156748294830322e+00, 3.309646546840668e-01, -1.7760356664657593e+00]])
+# core = point_base[4086]
 print("核心点坐标：", core)
 radius = 9.74/1000
 n_sigma = 3
@@ -49,10 +49,10 @@ n_sigma = 3
 # end_time = time.process_time()
 # print("knn建树总耗时 ：" + str(end_time - start_time) + "s")
 #
-# storeTree(kdt, 'tree.txt')
-#
+# storeTree(kdt, 'tree_3.txt')
+
 start_time = time.process_time()
-kdt = grabTree("tree.txt")
+kdt = grabTree("tree_3.txt")
 end_time = time.process_time()
 print("读取knn树总耗时 ：" + str(end_time - start_time) + "s")
 
