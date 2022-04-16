@@ -81,6 +81,7 @@ point_cloud = pv.PolyData(points)
 point_cloud.point_data.active_normals = normals
 mesh_for_pv = point_cloud.delaunay_2d(alpha=avg_dist + std_dist * 3)
 mesh_for_pv.point_data.active_normals = normals
+mesh_for_pv['colors'] = colors
 
 faces_pv = mesh_for_pv.faces.reshape((-1, 4))[:, 1:4]
 points_pv = mesh_for_pv.points
@@ -89,7 +90,7 @@ pl = pv.Plotter(shape=(1, 2))
 pl.add_mesh(point_cloud, show_edges=True, rgb=True)
 pl.add_title('Point Cloud of 3D Surface')
 pl.subplot(0, 1)
-pl.add_mesh(mesh_for_pv, color=True, show_edges=True)
+pl.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
 pl.add_title('Reconstructed Surface')
 pl.show()
 

@@ -4,7 +4,6 @@ import pandas as pd
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
 import time
-from numpy.linalg import norm
 import trimesh
 
 
@@ -19,36 +18,6 @@ def sensor_plane_point(points_per_side_=2, scale_factor_=200):
     points_in_sensor_ = np.hstack((x_.reshape((-1, 1)), y_.reshape((-1, 1)),  z_.reshape((-1, 1))))
 
     return points_in_sensor_
-
-
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=2, resolution=6):
-    vector_ = cam_ - target_
-    r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
-    r_axis = np.cross(axis_, vector_)
-    r_axis = r_axis/np.linalg.norm(r_axis)
-    # print(R_theta/np.pi*180, R_axis)
-
-    qw_ = np.cos(r_theta / 2)
-    qx_ = r_axis[0] * np.sin(r_theta/2)
-    qy_ = r_axis[1] * np.sin(r_theta/2)
-    qz_ = r_axis[2] * np.sin(r_theta/2)
-
-    height_ = np.linalg.norm(vector_)*scale_
-
-    tran_1_ = [0, 0, -0.5*height_]
-    tran_2_ = target_
-
-    radius_ = repro_err*pix_size_*(height_/focal_)
-    # print("圆锥的投影半径 ", radius_/2)
-
-    cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
-    r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
-    cone_.translate(tran_1_)
-    cone_.rotate(r_, center=(0, 0, 0))
-
-    cone_.translate(tran_2_)
-
-    return cone_
 
 
 def vector_length(input_vector):
@@ -103,32 +72,41 @@ pcd = o3d.geometry.PointCloud()
 pcd.points = o3d.utility.Vector3dVector(points)
 pcd.colors = o3d.utility.Vector3dVector(colors)
 pcd.normals = o3d.utility.Vector3dVector(normals)
-# pcd = o3d.io.read_point_cloud("data/1.ply")
-# o3d.io.write_point_cloud("data/1_improved.ply", pcd)
 
-# o3d.visualization.draw_geometries([pcd],
-#                                   zoom=0.3412,
-#                                   front=[0.4257, -0.2125, -0.8795],
-#                                   lookat=[2.6172, 2.0475, 1.532],
-#                                   up=[-0.0694, -0.9768, 0.2024],
-#                                   point_show_normal=True)
-
-# estimate radius for rolling ball
 distances = pcd.compute_nearest_neighbor_distance()
 avg_dist = np.mean(distances)
-radius = 1.5 * avg_dist
+std_dist = np.std(distances)
 
+point_cloud = pv.PolyData(points)
+point_cloud.point_data.active_normals = normals
+mesh_for_pv = point_cloud.delaunay_2d(alpha=avg_dist + std_dist * 3)
+mesh_for_pv.point_data.active_normals = normals
+mesh_for_pv['colors'] = colors
+
+faces_pv = mesh_for_pv.faces.reshape((-1, 4))[:, 1:4]
+points_pv = mesh_for_pv.points
+
+pl = pv.Plotter(shape=(1, 2))
+pl.add_mesh(point_cloud, show_edges=True, rgb=True)
+pl.add_title('Point Cloud of 3D Surface')
+pl.subplot(0, 1)
+pl.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
+pl.add_title('Reconstructed Surface')
+pl.show()
+
+# estimate radius for rolling ball
 mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
            pcd,
-           o3d.utility.DoubleVector([radius, radius * 2]))
+           o3d.utility.DoubleVector([avg_dist * 0.25, avg_dist * 0.5, avg_dist, avg_dist * 1.5, avg_dist * 2, avg_dist * 2.5, avg_dist * 3, avg_dist * 4]))
+o3d.visualization.draw_geometries([pcd, mesh])
 
-# o3d.visualization.draw_geometries([pcd, mesh])
+print(points)
+print(np.asarray(points_pv))
+print(np.asarray(faces_pv))
+print(np.asarray(mesh.triangles))
 
 # create the triangular mesh with the vertices and faces from open3d
-mesh_for_trimesh = trimesh.Trimesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles),
-                          vertex_normals=np.asarray(mesh.vertex_normals))
-
-# mesh_for_trimesh.convex.is_convex(mesh_for_trimesh)
+mesh_for_trimesh = trimesh.Trimesh(vertices=points, faces=np.asarray(faces_pv), vertex_normals=normals)
 
 mesh_ = pv.read("data/1.ply")
 mesh_.scale([1000, 1000, 1000], inplace=True)
@@ -193,6 +171,5 @@ for j in np.arange(4068, 4078):
     print(v)
     plotter.show()
 
-    if v != 0:
-
+    if v == 0:
         print('no intersection')
