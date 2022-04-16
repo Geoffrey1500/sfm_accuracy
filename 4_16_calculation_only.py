@@ -50,126 +50,100 @@ f = 8.8
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
 
-"""
-读取相机位置和朝向
-"""
+data_path = "data/25m"
+filename_list = ["50o", "60o", "70o", "80o", "90o"]
 
-data = pd.read_csv("data/camera.csv")
-print(data.head(5))
-cam_loc = data[["x", "y", "z"]].values*1000
-euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
-rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
+for k in filename_list:
+    """
+    读取相机位置和朝向
+    """
+    camera_data = pd.read_csv(data_path + '/cameras/' + k + ".csv")
+    cam_loc = camera_data[["x", "y", "z"]].values*1000
+    euler_ang = camera_data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
+    rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 
-'''
-读取目标点云
-'''
-original_data = pd.read_csv('data/point_data.txt', header=None, sep=' ').to_numpy()
-points = original_data[:, 0:3]*1000
-colors = original_data[:, 3:6]/255
-normals = original_data[:, 6::]
+    '''
+    读取目标点云
+    '''
+    original_data = pd.read_csv(data_path + '/points/' + k + ".txt", header=None, sep=' ').to_numpy()
+    points = original_data[:, 0:3]*1000
+    colors = original_data[:, 3:6]/255
+    normals = original_data[:, 6::]
 
-pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(points)
-pcd.colors = o3d.utility.Vector3dVector(colors)
-pcd.normals = o3d.utility.Vector3dVector(normals)
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    pcd.normals = o3d.utility.Vector3dVector(normals)
 
-distances = pcd.compute_nearest_neighbor_distance()
-avg_dist = np.mean(distances)
-std_dist = np.std(distances)
+    '''
+    计算平均临近点距离
+    '''
+    distances = pcd.compute_nearest_neighbor_distance()
+    avg_dist = np.mean(distances)
+    std_dist = np.std(distances)
 
-point_cloud = pv.PolyData(points)
-point_cloud.point_data.active_normals = normals
-mesh_for_pv = point_cloud.delaunay_2d(alpha=avg_dist + std_dist * 3)
-mesh_for_pv.point_data.active_normals = normals
-mesh_for_pv['colors'] = colors
+    '''
+    重建三角面片
+    '''
+    point_cloud = pv.PolyData(points)
+    point_cloud.point_data.active_normals = normals
+    mesh_for_pv = point_cloud.delaunay_2d(alpha=avg_dist + std_dist * 3)
+    mesh_for_pv.point_data.active_normals = normals
+    mesh_for_pv['colors'] = colors
 
-faces_pv = mesh_for_pv.faces.reshape((-1, 4))[:, 1:4]
-points_pv = mesh_for_pv.points
+    faces_pv = mesh_for_pv.faces.reshape((-1, 4))[:, 1:4]
+    points_pv = mesh_for_pv.points
 
-pl = pv.Plotter(shape=(1, 2))
-pl.add_mesh(point_cloud, show_edges=True, rgb=True)
-pl.add_title('Point Cloud of 3D Surface')
-pl.subplot(0, 1)
-pl.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
-pl.add_title('Reconstructed Surface')
-pl.show()
+    # create the triangular mesh with the vertices and faces from pyvista
+    mesh_for_trimesh = trimesh.Trimesh(vertices=points, faces=np.asarray(faces_pv), vertex_normals=normals)
 
-# estimate radius for rolling ball
-mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-           pcd,
-           o3d.utility.DoubleVector([avg_dist * 0.25, avg_dist * 0.5, avg_dist, avg_dist * 1.5, avg_dist * 2, avg_dist * 2.5, avg_dist * 3, avg_dist * 4]))
-o3d.visualization.draw_geometries([pcd, mesh])
+    num_img_visible = np.ones(len(points))*-1
 
-print(points)
-print(np.asarray(points_pv))
-print(np.asarray(faces_pv))
-print(np.asarray(mesh.triangles))
+    for j in np.arange(len(points)):
+        start = points[j]
+        start_vertex_normals = normals[j]
+        v = 0
+        start_time = time.process_time()
 
-# create the triangular mesh with the vertices and faces from open3d
-mesh_for_trimesh = trimesh.Trimesh(vertices=points, faces=np.asarray(faces_pv), vertex_normals=normals)
+        for i in range(len(euler_ang)):
+            rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
+            final_sensor_plane = rotated_sensor_plane + cam_loc[i]
 
-mesh_ = pv.read("data/1.ply")
-mesh_.scale([1000, 1000, 1000], inplace=True)
+            cloud = pv.PolyData(final_sensor_plane)
+            sensor_plane = cloud.delaunay_2d()
 
-for j in np.arange(4068, 4078):
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh_, show_edges=True)
-    _ = plotter.add_axes(box=True)
+            stop = cam_loc[i]
 
-    start = points[j]
-    start_vertex_normals = normals[j]
-    v = 0
-    start_time = time.process_time()
+            # Perform ray trace for sensor plane
+            point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
 
-    for i in range(len(euler_ang)):
-        rotated_sensor_plane = rot_mat_set[i].apply(sensor_plane_point())
-        final_sensor_plane = rotated_sensor_plane + cam_loc[i]
+            if ind_cam.size:
+                ray_dire = (start-stop)
 
-        cloud = pv.PolyData(final_sensor_plane)
-        sensor_plane = cloud.delaunay_2d()
+                # 判断 ray 和 mesh 第一个相交点是否为目标点
+                index_tri = mesh_for_trimesh.ray.intersects_first(
+                    ray_origins=[stop],
+                    ray_directions=[ray_dire])
 
-        stop = cam_loc[i]
+                tri_queried = mesh_for_trimesh.triangles[index_tri]
+                points_wanted = start
 
-        # Perform ray trace for sensor plane
-        point_cam, ind_cam = sensor_plane.ray_trace(start, stop)
+                dis_check = tri_queried[0] - points_wanted
+                sum_dis_check = np.sum(dis_check**2, axis=1)
 
-        sphere = pv.Sphere(radius=500, center=cam_loc[i])
-        ray = pv.Line(start, stop)
-        # intersection = pv.PolyData(point_cam)
-        plotter.add_mesh(sphere, color="black", opacity=1)
-        plotter.add_mesh(ray, color="green", line_width=1, label="Ray Segment", opacity=1)
-        plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="green")
+                # 加入射线与目标点法向量的限制，过滤掉夹角大于60度的射线
+                if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
 
-        if ind_cam.size:
-            ray_dire = (start-stop)
+                    v += 1
 
-            # 判断 ray 和 mesh 第一个相交点是否为目标点
-            index_tri = mesh_for_trimesh.ray.intersects_first(
-                ray_origins=[stop],
-                ray_directions=[ray_dire])
+        end_time = time.process_time()
+        print("共运行：" + str(end_time - start_time) + "s")
+        print("一共模拟 " + str(v) + " 个点")
+        print(v)
 
-            tri_queried = mesh_for_trimesh.triangles[index_tri]
-            points_wanted = start
+        if v == 0:
+            print('no intersection')
+        num_img_visible[j] = v
 
-            dis_check = tri_queried[0] - points_wanted
-            sum_dis_check = np.sum(dis_check**2, axis=1)
-
-            # 加入射线与目标点法向量的限制，过滤掉夹角大于60度的射线
-            if np.any(sum_dis_check <= 0.0001) and angle_between_vectors(start_vertex_normals, (stop - start) / 1000) > 0.866:
-                intersection = pv.PolyData(point_cam)
-                # plotter.add_mesh(sphere, color="red", opacity=1)
-                plotter.add_mesh(ray, color="red", line_width=1, label="Ray Segment", opacity=1)
-                plotter.add_mesh(intersection, color="blue",
-                                 point_size=15, label="Intersection Points")
-                plotter.add_mesh(sensor_plane, show_edges=False, opacity=1, color="red")
-
-                v += 1
-
-    end_time = time.process_time()
-    print("共运行：" + str(end_time - start_time) + "s")
-    print("一共模拟 " + str(v) + " 个点")
-    print(v)
-    plotter.show()
-
-    if v == 0:
-        print('no intersection')
+    np.savetxt(data_path + '/results/' + k + ".txt", num_img_visible, fmt="%d")
+    print(k + " is finished")

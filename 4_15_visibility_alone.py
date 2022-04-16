@@ -108,12 +108,10 @@ print(np.asarray(mesh.triangles))
 # create the triangular mesh with the vertices and faces from open3d
 mesh_for_trimesh = trimesh.Trimesh(vertices=points, faces=np.asarray(faces_pv), vertex_normals=normals)
 
-mesh_ = pv.read("data/1.ply")
-mesh_.scale([1000, 1000, 1000], inplace=True)
 
 for j in np.arange(4068, 4078):
     plotter = pv.Plotter()
-    plotter.add_mesh(mesh_, show_edges=True)
+    plotter.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
     _ = plotter.add_axes(box=True)
 
     start = points[j]
