@@ -51,7 +51,7 @@ resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
 
 data_path = "data/25m"
-filename_list = ["50o", "60o", "70o", "80o", "90o"]
+filename_list = ["80o"]
 
 for k in filename_list:
     """

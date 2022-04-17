@@ -54,7 +54,7 @@ pixel_size = np.average([w/resol_x, h/resol_y])
 读取相机位置和朝向
 """
 
-data = pd.read_csv("data/camera.csv")
+data = pd.read_csv("data/25m/cameras/90o.csv")
 print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
@@ -63,7 +63,7 @@ rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
 '''
 读取目标点云
 '''
-original_data = pd.read_csv('data/point_data.txt', header=None, sep=' ').to_numpy()
+original_data = pd.read_csv('data/25m/points/90o.txt', header=None, sep=' ').to_numpy()
 points = original_data[:, 0:3]*1000
 colors = original_data[:, 3:6]/255
 normals = original_data[:, 6::]
@@ -79,7 +79,7 @@ std_dist = np.std(distances)
 
 point_cloud = pv.PolyData(points)
 point_cloud.point_data.active_normals = normals
-mesh_for_pv = point_cloud.delaunay_2d(alpha=avg_dist + std_dist * 3)
+mesh_for_pv = point_cloud.delaunay_2d(alpha=0)
 mesh_for_pv.point_data.active_normals = normals
 mesh_for_pv['colors'] = colors
 
@@ -90,7 +90,7 @@ pl = pv.Plotter(shape=(1, 2))
 pl.add_mesh(point_cloud, show_edges=True, rgb=True)
 pl.add_title('Point Cloud of 3D Surface')
 pl.subplot(0, 1)
-pl.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
+pl.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=True)
 pl.add_title('Reconstructed Surface')
 pl.show()
 
@@ -109,7 +109,7 @@ print(np.asarray(mesh.triangles))
 mesh_for_trimesh = trimesh.Trimesh(vertices=points, faces=np.asarray(faces_pv), vertex_normals=normals)
 
 
-for j in np.arange(4068, 4078):
+for j in np.arange(0, 4078):
     plotter = pv.Plotter()
     plotter.add_mesh(mesh_for_pv, scalars='colors', rgb=True, show_edges=False)
     _ = plotter.add_axes(box=True)
