@@ -23,13 +23,17 @@ w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
+intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
+                    [0, f/pixel_size, resol_y/2],
+                    [0, 0, 1]]
 
 
-def sensor_plane_point(points_per_side_=2, scale_factor_=200):
+
+def sensor_plane_point(points_per_side_=500, scale_factor_=1):
     # To create sensor plane
 
-    x_ = np.linspace(-w/2*scale_factor_, w/2*scale_factor_, 3*points_per_side_)
-    y_ = np.linspace(-h/2*scale_factor_, h/2*scale_factor_, 2*points_per_side_)
+    x_ = np.linspace((-w/2+pixel_size/2)*scale_factor_, (w/2-pixel_size/2)*scale_factor_, 3*points_per_side_)
+    y_ = np.linspace((-h/2+pixel_size/2)*scale_factor_, (h/2-pixel_size/2)*scale_factor_, 2*points_per_side_)
     x_, y_ = np.meshgrid(x_, y_)
     z_ = (np.zeros_like(x_) - f)*scale_factor_
 
@@ -180,6 +184,8 @@ def my_ray_casting():
     hit = ans['t_hit'].isfinite()
     points = rays[hit][:, :3] + rays[hit][:, 3:] * ans['t_hit'][hit].reshape((-1, 1))
     pcd = o3d.t.geometry.PointCloud(points)
+    mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        size=5, origin=[0, 0, 0])
     # Press Ctrl/Cmd-C in the visualization window to copy the current viewpoint
     o3d.visualization.draw_geometries([pcd.to_legacy()])
     # o3d.visualization.draw([pcd]) # new API
@@ -208,24 +214,34 @@ def my_ray_casting2():
     # o3d.visualization.draw_geometries([pcd, mesh], mesh_show_wireframe=True, point_show_normal=False)
 
     mesh_for_ray = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
-
     scene = o3d.t.geometry.RaycastingScene()
-    cube_id = scene.add_triangles(mesh_for_ray)
-    print(cube_id)
+    scene.add_triangles(mesh_for_ray)
 
-    rays_set = original_data[0:3, :6]
+    kkk = 28
+    print(cam_loc[kkk].reshape((-1, 1)))
+    ex_mat = np.vstack((np.hstack((rot_mat_set.as_matrix()[kkk], cam_loc[kkk].reshape((-1, 1)))), [[0, 0, 0, 1]]))
+    ex_mat = np.vstack((np.hstack(([[1, 0, 0],
+                                    [0, 1, 0],
+                                    [0, 0, -1]], cam_loc[kkk].reshape((-1, 1)))), [[0, 0, 0, 1]]))
+    # print(ex_mat)
+    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
+        intrinsic_matrix=intrinsic_matrix,
+        extrinsic_matrix=ex_mat,
+        width_px=int(resol_x),
+        height_px=int(resol_y),
+    )
 
-    rays = o3d.core.Tensor(rays_set,
+    rays_direction = np.asarray(rot_mat_set[kkk].apply(sensor_plane_point()))
+    print(rays_direction)
+    rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
+
+    rays_starts = np.expand_dims(cam_loc[kkk], 0).repeat(len(rays_direction), axis=0)
+
+    rays_sets = np.hstack((rays_starts, rays_direction))
+    print(rays_sets)
+    rays = o3d.core.Tensor(rays_sets,
                            dtype=o3d.core.Dtype.Float32)
 
-    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
-        fov_deg=90,
-        center=points[200],
-        eye=cam_loc[200],
-        up=[0, 1, 0],
-        width_px=50,
-        height_px=50,
-    )
     # We can directly pass the rays tensor to the cast_rays function.
     ans = scene.cast_rays(rays)
 
@@ -237,24 +253,45 @@ def my_ray_casting2():
     # o3d.visualization.draw([pcd]) # new API
 
     original_triangle = np.asarray(mesh.triangles)
-    print(original_triangle)
-    hit = ans['primitive_ids'] != 4294967295
-    index = ans['primitive_ids'][hit].numpy()
-    # print(index)
-    # print(hit)
-    # print(original_triangle[index])
+    # print(original_triangle)
+    # 在 geometry_ids 和 primitive_ids 中 4294967295 等同于 finite 无效数字
 
-    hit_triangles = original_triangle[index]
-    points2 = rays[hit][:, :3] + rays[hit][:, 3:] * ans['t_hit'][hit].reshape((-1, 1))
-    print(points2)
+    triangle_index = ans['primitive_ids'][ans['primitive_ids'] != 4294967295].numpy()
+    hit_triangles = original_triangle[triangle_index]
+    tri_pts_cors_1 = np.asarray(mesh.vertices)[hit_triangles[:, 0]]
+    tri_pts_cors_2 = np.asarray(mesh.vertices)[hit_triangles[:, 1]]
+    tri_pts_cors_3 = np.asarray(mesh.vertices)[hit_triangles[:, 2]]
 
-    print(np.asarray(mesh.vertices)[hit_triangles[0]])
+    print(tri_pts_cors_1)
 
-    # pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(points[ans['primitive_ids'].numpy()])
-    # pcd.colors = o3d.utility.Vector3dVector(colors[ans['primitive_ids'].numpy()])
+    rays_index = ans['t_hit'].isfinite()
+    inter_pts_cors = rays[rays_index][:, :3] + rays[rays_index][:, 3:] * ans['t_hit'][rays_index].reshape((-1, 1))
+    inter_pts_cors = inter_pts_cors.numpy()
+    print(inter_pts_cors)
+
+    print(len(inter_pts_cors), len(triangle_index))
+
+    dis_pts2tri_1 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_1), axis=1).reshape(-1, 1)
+    dis_pts2tri_2 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_2), axis=1).reshape(-1, 1)
+    dis_pts2tri_3 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_3), axis=1).reshape(-1, 1)
+
+    dis_pts2tri_set = np.hstack((dis_pts2tri_1, dis_pts2tri_2, dis_pts2tri_3))
+    print(dis_pts2tri_set)
+
+    index_xx = np.argmin(dis_pts2tri_set, axis=1)
+    print(index_xx)
+
+    index_ff = hit_triangles[np.arange(len(hit_triangles)), index_xx]
+    print(index_ff)
+    print(hit_triangles)
+
+    # print(np.sum(np.abs(inter_pts_cors - tri_pts_cors), axis=1))
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points[index_ff])
+    pcd.colors = o3d.utility.Vector3dVector(colors[index_ff])
     # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-    # o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries([pcd])
 
 
 if __name__ == '__main__':

@@ -59,6 +59,7 @@ print(data.head(5))
 cam_loc = data[["x", "y", "z"]].values*1000
 euler_ang = data[["heading", "pitch", "roll"]].values * np.array([[-1, 1, 1]]) + np.array([[0, 0, 0]])
 rot_mat_set = R.from_euler('ZXY', euler_ang, degrees=True)
+xaxa = rot_mat_set[0].as_matrix()
 
 '''
 读取目标点云
