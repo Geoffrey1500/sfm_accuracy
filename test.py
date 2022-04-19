@@ -1,8 +1,4 @@
-import pyvista as pv
-from pyvista import examples
-import trimesh
 import open3d as o3d
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
