@@ -392,4 +392,4 @@ def my_ray_casting3():
 
 
 if __name__ == '__main__':
-    test()
+    my_ray_casting3()
