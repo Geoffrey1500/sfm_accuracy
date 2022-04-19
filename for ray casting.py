@@ -92,7 +92,7 @@ def sen_pts_gen(dist_, cam_id_, points_per_side_=1824):
 
     pts_for_view = np.hstack((x_, y_, z_))
 
-    visualize_camera(pts_for_view, pts_for_view[ind_final])
+    # visualize_camera(pts_for_view, pts_for_view[ind_final])
 
     return pts_for_view[ind_final]
 
@@ -171,25 +171,6 @@ def dist_pts_2(pts_org_, dist_):
     return pts_org_new, pts_dist, pixel_dist
 
 
-def test():
-    data = pd.read_csv("data/UAV_only4.csv")
-    # print(data.head(5))
-    cam_loc = data[["x", "y", "alt"]].values
-    euler_ang = data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]])
-    rot_mat_set = R.from_euler('yxz', [[0, 0, 0]], degrees=True)
-
-    dist = data[["k1", "k2", "k3", "k4"]].values
-
-    kkk = 0
-    print(cam_loc[kkk].reshape((-1, 1)))
-
-    rays_direction = np.asarray(rot_mat_set[kkk].apply(sensor_plane_point(points_per_side_=30)))
-
-    pt1, pt2 = dist_pts_2(rays_direction, dist[kkk])
-
-    visualize_camera(pt2, pt1)
-
-
 def visualize_camera(pts_tar, pts_ref):
     blue = np.array([0, 0, 1])
     colors_tar = np.expand_dims(blue, 0).repeat(len(pts_tar), axis=0)
@@ -207,11 +188,13 @@ def visualize_camera(pts_tar, pts_ref):
 
 
 def my_ray_casting3():
-    data = pd.read_csv("data/UAV_only.csv")
-    print(data.head(5))
-    cam_loc = data[["x", "y", "z"]].values
+
+    data = pd.read_csv("data/UAV_only4.csv")
+    # print(data.head(5))
+    cam_loc = data[["x", "y", "alt"]].values
     euler_ang = data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
+    dist = data[["k1", "k2", "k3", "k4"]].values
 
     mesh = o3d.io.read_triangle_mesh('data/UAV_only.ply')
 
@@ -232,17 +215,17 @@ def my_ray_casting3():
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(mesh_for_ray)
 
-    kkk = 301
+    kkk = 197
     print(cam_loc[kkk].reshape((-1, 1)))
 
-    rays_direction = np.asarray(rot_mat_set[kkk].apply(sensor_plane_point(points_per_side_=1824)))
-    print(rays_direction)
+    rays_direction = np.asarray(rot_mat_set[kkk].apply(sen_pts_gen(dist, kkk)))
+    # print(rays_direction)
     rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
 
     rays_starts = np.expand_dims(cam_loc[kkk], 0).repeat(len(rays_direction), axis=0)
 
     rays_sets = np.hstack((rays_starts, rays_direction))
-    print(rays_sets)
+    # print(rays_sets)
     rays = o3d.core.Tensor(rays_sets,
                            dtype=o3d.core.Dtype.Float32)
 
@@ -259,28 +242,28 @@ def my_ray_casting3():
     tri_pts_cors_2 = np.asarray(mesh.vertices)[hit_triangles[:, 1]]
     tri_pts_cors_3 = np.asarray(mesh.vertices)[hit_triangles[:, 2]]
 
-    print(tri_pts_cors_1)
+    # print(tri_pts_cors_1)
 
     rays_index = ans['t_hit'].isfinite()
     inter_pts_cors = rays[rays_index][:, :3] + rays[rays_index][:, 3:] * ans['t_hit'][rays_index].reshape((-1, 1))
     inter_pts_cors = inter_pts_cors.numpy()
-    print(inter_pts_cors)
+    # print(inter_pts_cors)
 
-    print(len(inter_pts_cors), len(triangle_index))
+    # print(len(inter_pts_cors), len(triangle_index))
 
     dis_pts2tri_1 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_1), axis=1).reshape(-1, 1)
     dis_pts2tri_2 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_2), axis=1).reshape(-1, 1)
     dis_pts2tri_3 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_3), axis=1).reshape(-1, 1)
 
     dis_pts2tri_set = np.hstack((dis_pts2tri_1, dis_pts2tri_2, dis_pts2tri_3))
-    print(dis_pts2tri_set)
+    # print(dis_pts2tri_set)
 
     index_xx = np.argmin(dis_pts2tri_set, axis=1)
-    print(index_xx)
+    # print(index_xx)
 
     index_ff = hit_triangles[np.arange(len(hit_triangles)), index_xx]
-    print(index_ff)
-    print(hit_triangles)
+    # print(index_ff)
+    # print(hit_triangles)
 
     # print(np.sum(np.abs(inter_pts_cors - tri_pts_cors), axis=1))
 
@@ -292,5 +275,5 @@ def my_ray_casting3():
 
 
 if __name__ == '__main__':
-    test2()
+    my_ray_casting3()
 
