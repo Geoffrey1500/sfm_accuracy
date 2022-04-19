@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
+import sympy as sp
 
 
 ''' 
@@ -35,11 +36,81 @@ def sensor_plane_point(points_per_side_=500, scale_factor_=1):
     x_ = np.linspace((-w/2+pixel_size/2)*scale_factor_, (w/2-pixel_size/2)*scale_factor_, 3*points_per_side_)
     y_ = np.linspace((-h/2+pixel_size/2)*scale_factor_, (h/2-pixel_size/2)*scale_factor_, 2*points_per_side_)
     x_, y_ = np.meshgrid(x_, y_)
+
+    x_ = x_.reshape((-1, 1))
+    y_ = y_.reshape((-1, 1))
     z_ = (np.zeros_like(x_) - f)*scale_factor_
 
-    points_in_sensor_ = np.hstack((x_.reshape((-1, 1)), y_.reshape((-1, 1)),  z_.reshape((-1, 1))))
+    points_in_sensor_ = np.hstack((x_, y_,  z_))
 
     return points_in_sensor_
+
+
+def dist_pts(pts_org_, dist_):
+    z_corrt = pts_org_[:, -1].reshape((-1, 1))
+    x_corrt = pts_org_[:, 0].reshape((-1, 1)) / z_corrt
+    y_corrt = pts_org_[:, 1].reshape((-1, 1)) / z_corrt
+    # r_ = x_corrt ** 2 + y_corrt ** 2
+    #
+    # r_test = r_[0, 0]
+
+    x = sp.Symbol('x')
+    y = sp.Symbol('y')
+
+    r_ = x ** 2 + y ** 2
+
+    solved_value = sp.solve([x*(1 + dist_[0]*(x ** 2 + y ** 2) + dist_[1]*((x ** 2 + y ** 2)**2) + dist_[2]*((x ** 2 + y ** 2)**3)) - x_corrt[0, 0],
+                             y*(1 + dist_[0]*(x ** 2 + y ** 2) + dist_[1]*((x ** 2 + y ** 2)**2) + dist_[2]*((x ** 2 + y ** 2)**3)) - y_corrt[0, 0]],
+                            [x, y])
+    print(solved_value)
+
+    # x, y = sp.symbols('x y')
+    # # eqs = [sp.Eq(x0 * sqrt(1 + ((lamb * x1) / (pi * x0 ** 2)) ** 2), 352.3303e-6),
+    # #        sp.Eq(x0 * sqrt(1 + ((lamb * (x1 + 0.10)) / (pi * x0 ** 2)) ** 2), 462.0847e-6)]
+    # eqs = [sp.Eq(x*(1 + dist_[0]*(x ** 2 + y ** 2) + dist_[1]*((x ** 2 + y ** 2)**2) + dist_[2]*((x ** 2 + y ** 2)**3)), x_corrt[0, 0]),
+    #        sp.Eq(y*(1 + dist_[0]*(x ** 2 + y ** 2) + dist_[1]*((x ** 2 + y ** 2)**2) + dist_[2]*((x ** 2 + y ** 2)**3)), y_corrt[0, 0])]
+    #
+    # print(sp.solve(eqs, [x, y]))
+    print(x_corrt[0, 0], y_corrt[0, 0])
+    print(pts_org_[0])
+
+
+def dist_pts_2(pts_org_, dist_):
+    z_corrt = pts_org_[:, -1].reshape((-1, 1))
+    x_corrt = pts_org_[:, 0].reshape((-1, 1))/z_corrt
+    y_corrt = pts_org_[:, 1].reshape((-1, 1))/z_corrt
+    r_ = x_corrt ** 2 + y_corrt ** 2
+
+    pts_org_new = np.hstack((x_corrt, y_corrt, np.ones_like(x_corrt)))
+    pixel_org = np.dot(intrinsic_matrix, pts_org_new.T).T
+
+    x_dist = x_corrt * (1 + dist_[0] * r_ + dist_[1] * (r_ ** 2) + dist_[2] * (r_ ** 3))
+    y_dist = y_corrt * (1 + dist_[0] * r_ + dist_[1] * (r_ ** 2) + dist_[2] * (r_ ** 3))
+
+    pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
+    pixel_dist = np.dot(intrinsic_matrix, pts_dist.T).T
+
+    print(pts_dist)
+    print(pixel_org)
+    print(np.min(pixel_dist, axis=0))
+    print(np.min(pixel_org, axis=0))
+
+
+def test():
+    data = pd.read_csv("data/UAV_only4.csv")
+    # print(data.head(5))
+    cam_loc = data[["x", "y", "alt"]].values
+    euler_ang = data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]])
+    rot_mat_set = R.from_euler('yxz', [[0, 0, 0]], degrees=True)
+
+    dist = data[["k1", "k2", "k3", "k4"]].values
+
+    kkk = 0
+    print(cam_loc[kkk].reshape((-1, 1)))
+
+    rays_direction = np.asarray(rot_mat_set[kkk].apply(sensor_plane_point(points_per_side_=1500)))
+
+    dist_pts_2(rays_direction, dist[kkk])
 
 
 def vector_length(input_vector):
@@ -49,97 +120,6 @@ def vector_length(input_vector):
 def angle_between_vectors(v1, v2):
     # return np.arccos(np.dot(v1, v2) / (vector_length(v1) * vector_length(v2))) * (180 / np.pi)
     return np.dot(v1, v2) / (vector_length(v1) * vector_length(v2))
-
-
-def grab_tree(filename):
-    import pickle
-    fr = open(filename, 'rb')
-    return pickle.load(fr)
-
-
-def show_pv():
-    # Get a sample file
-    mesh = pv.read("data/UAV_only.ply")
-    # cpos = mesh.plot()
-
-    # print(mesh.points)
-    # print(mesh.faces)
-    #
-    #
-    plotter = pv.Plotter()
-    plotter.add_mesh(mesh, show_edges=True, point_size=1, rgb=True)
-    plotter.show()
-
-
-def show_trimesh():
-    mesh_B = trimesh.load('data/UAV_only.ply', force='mesh')
-    mesh_B.show()
-
-    print(mesh_B.vertex_normals)
-
-
-def ray_casting():
-    # Load mesh and convert to open3d.t.geometry.TriangleMesh
-    cube = o3d.geometry.TriangleMesh.create_box().translate([0, 0, 0])
-    cube = o3d.t.geometry.TriangleMesh.from_legacy(cube)
-
-    # Create a scene and add the triangle mesh
-    scene = o3d.t.geometry.RaycastingScene()
-    cube_id = scene.add_triangles(cube)
-    print(cube_id)
-
-    # We create two rays:
-    # The first ray starts at (0.5,0.5,10) and has direction (0,0,-1).
-    # The second ray start at (-1,-1,-1) and has direction (0,0,-1).
-    rays = o3d.core.Tensor([[0.5, 0.5, 10, 0, 0, -1], [-1, -1, -1, 0, 0, -1]],
-                           dtype=o3d.core.Dtype.Float32)
-
-    ans = scene.cast_rays(rays)
-    print(ans.keys())
-    print(ans['t_hit'].numpy(), ans['geometry_ids'].numpy())
-
-    # Create meshes and convert to open3d.t.geometry.TriangleMesh
-    cube = o3d.geometry.TriangleMesh.create_box().translate([0, 0, 0])
-    cube = o3d.t.geometry.TriangleMesh.from_legacy(cube)
-    torus = o3d.geometry.TriangleMesh.create_torus().translate([0, 0, 2])
-    torus = o3d.t.geometry.TriangleMesh.from_legacy(torus)
-    sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.5).translate(
-        [1, 2, 3])
-    sphere = o3d.t.geometry.TriangleMesh.from_legacy(sphere)
-
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(cube)
-    scene.add_triangles(torus)
-    _ = scene.add_triangles(sphere)
-
-    rays = o3d.t.geometry.RaycastingScene.create_rays_pinhole(
-        fov_deg=90,
-        center=[0, 0, 2],
-        eye=[2, 3, 0],
-        up=[0, 1, 0],
-        width_px=640,
-        height_px=480,
-    )
-    # We can directly pass the rays tensor to the cast_rays function.
-    ans = scene.cast_rays(rays)
-
-    plt.imshow(ans['t_hit'].numpy())
-
-    # use abs to avoid negative values
-    plt.imshow(np.abs(ans['primitive_normals'].numpy()))
-
-    plt.imshow(ans['geometry_ids'].numpy(), vmax=3)
-
-    hit = ans['t_hit'].isfinite()
-    points = rays[hit][:, :3] + rays[hit][:, 3:] * ans['t_hit'][hit].reshape((-1, 1))
-    pcd = o3d.t.geometry.PointCloud(points)
-    # Press Ctrl/Cmd-C in the visualization window to copy the current viewpoint
-    o3d.visualization.draw_geometries([pcd.to_legacy()],
-                                      front=[0.5, 0.86, 0.125],
-                                      lookat=[0.23, 0.5, 2],
-                                      up=[-0.63, 0.45, -0.63],
-                                      zoom=0.7)
-    # o3d.visualization.draw([pcd]) # new API
 
 
 def my_ray_casting():
@@ -356,7 +336,7 @@ def my_ray_casting3():
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(mesh_for_ray)
 
-    kkk = 220
+    kkk = 301
     print(cam_loc[kkk].reshape((-1, 1)))
 
     rays_direction = np.asarray(rot_mat_set[kkk].apply(sensor_plane_point(points_per_side_=1824)))
@@ -416,4 +396,4 @@ def my_ray_casting3():
 
 
 if __name__ == '__main__':
-    my_ray_casting3()
+    test()
