@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
 import sympy as sp
+import time
 
 
 ''' 
@@ -29,7 +30,7 @@ intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
                     [0, 0, 1]]
 
 
-def sen_pts_gen(dist_, cam_id_, points_per_side_=30, scale_factor_=1.5):
+def sen_pts_gen(dist_, cam_id_, points_per_side_=resol_x/3, scale_factor_=1.5):
     # To create sensor plane
 
     dist_s_ = dist_[cam_id_]
@@ -249,7 +250,7 @@ def my_ray_casting3():
 
 
 def my_ray_casting4():
-
+    start = time.perf_counter()
     data = pd.read_csv("data/UAV_only4.csv")
     # print(data.head(5))
     cam_loc = data[["x", "y", "alt"]].values
@@ -258,7 +259,6 @@ def my_ray_casting4():
     dist = data[["k1", "k2", "k3", "k4"]].values
 
     mesh = o3d.io.read_triangle_mesh('data/UAV_only.ply')
-    original_triangle = np.asarray(mesh.triangles)
 
     original_data = pd.read_csv('data/UAV_only.xyz', header=None, sep=' ').to_numpy()
     points = original_data[:, 0:3]
@@ -277,18 +277,37 @@ def my_ray_casting4():
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(mesh_for_ray)
 
+    end = time.perf_counter()
+    print('原始数据载入和预处理的时长为:', end-start)
+
+    start = time.perf_counter()
     original_sen_pts = sen_pts_gen(dist, int(len(cam_loc)/2))
+    end = time.perf_counter()
+    print('生成初始光追矩阵所需时长:', end - start)
 
-    kkk = 197
-    print(cam_loc[kkk].reshape((-1, 1)))
+    ini_count = np.empty(0)
 
-    index_ff = find_nearest_hit_pts(cam_loc[kkk], rot_mat_set[kkk], original_sen_pts, mesh, scene)
+    for i in np.arange(220, 240):
+        start = time.perf_counter()
+        idx_inte_pts = find_nearest_hit_pts(cam_loc[i], rot_mat_set[i], original_sen_pts, mesh, scene)
+        end = time.perf_counter()
+        print('计算击中的三角面片所需时长:', end - start)
 
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points[index_ff])
-    pcd.colors = o3d.utility.Vector3dVector(colors[index_ff])
-    # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-    o3d.visualization.draw_geometries([pcd])
+        print(i)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
+        pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
+        # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
+        o3d.visualization.draw_geometries([pcd])
+
+        ini_count = np.append(ini_count, idx_inte_pts)
+
+    start = time.perf_counter()
+    unique, counts = np.unique(ini_count, return_counts=True)
+    end = time.perf_counter()
+    print('去重统计所需时长:', end - start)
+
+    print(counts, max(counts), min(counts))
 
 
 def test_duplicate():
