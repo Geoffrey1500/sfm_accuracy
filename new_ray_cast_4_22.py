@@ -93,15 +93,28 @@ def sen_pts_gen(dist_, cam_id_, points_per_side_=resol_x/3, scale_factor_=1.5):
 
 def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     # To create sensor plane
-    # pts_ = pts_*np.array([[1, 1, -1]])
+    pts_ = pts_
+    cam_loc_ = -cam_loc_
+
+    # pts_ = np.hstack((pts_, np.ones((len(pts_), 1))))
 
     # cam_pos_ = cam_pos_.inv()
 
-    pts_cam_ = np.asarray(cam_pos_.apply(pts_)) + cam_loc_.reshape((1, -1))
-    pts_cam_ = pts_cam_/pts_cam_[:, -1].reshape((-1, 1))
+    rot_mat_ = cam_pos_.as_matrix()
+    rot_mat_ = np.linalg.inv(rot_mat_)
 
-    x_corrt = pts_cam_[:, 0].reshape((-1, 1))
-    y_corrt = pts_cam_[:, 1].reshape((-1, 1))
+    # rot_ext = np.hstack((np.asarray(rot_mat_), cam_loc_.reshape((-1, 1))))
+
+    # 很重要，需要将旋转矩阵求逆，并且，还需要将唯一矩阵进行旋转才行！！！！
+    cam_loc_new = np.dot(np.asarray(rot_mat_), cam_loc_.reshape((-1, 1)))
+    rot_ext = np.hstack((np.asarray(rot_mat_), cam_loc_new))
+
+    pts_cam_ = np.dot(rot_ext, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
+    pts_cam_new = pts_cam_/(pts_cam_[:, -1].reshape((-1, 1)))
+    pix_dist_2 = np.dot(intrinsic_matrix, pts_cam_new.T).T
+
+    x_corrt = pts_cam_new[:, 0].reshape((-1, 1))
+    y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
     r_ = x_corrt ** 2 + y_corrt ** 2
 
     x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
@@ -128,15 +141,15 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     pcd_tar.points = o3d.utility.Vector3dVector(pix_dist_[pix_inside_idx])
     pcd_tar.colors = o3d.utility.Vector3dVector(colors_filtered)
 
-    blue = np.array([0, 0, 1])
-    pts_ref_2 = sensor_plane_point(points_per_side_=200)
-    pts_ref_2 = np.dot(intrinsic_matrix, pts_ref_2.T).T
-    colors_ref_2 = np.expand_dims(blue, 0).repeat(len(pts_ref_2), axis=0)
-    pcd_ref_2 = o3d.geometry.PointCloud()
-    pcd_ref_2.points = o3d.utility.Vector3dVector(pts_ref_2)
-    pcd_ref_2.colors = o3d.utility.Vector3dVector(colors_ref_2)
+    # blue = np.array([0, 0, 1])
+    # pts_ref_2 = sensor_plane_point(points_per_side_=200)
+    # pts_ref_2 = np.dot(intrinsic_matrix, pts_ref_2.T).T
+    # colors_ref_2 = np.expand_dims(blue, 0).repeat(len(pts_ref_2), axis=0)
+    # pcd_ref_2 = o3d.geometry.PointCloud()
+    # pcd_ref_2.points = o3d.utility.Vector3dVector(pts_ref_2)
+    # pcd_ref_2.colors = o3d.utility.Vector3dVector(colors_ref_2)
 
-    o3d.visualization.draw_geometries([pcd_tar, pcd_ref, pcd_ref_2])
+    o3d.visualization.draw_geometries([pcd_tar, pcd_ref])
 
     # visualize_camera(pts_, filtered_pts_)
 
@@ -479,7 +492,7 @@ def my_ray_casting5():
 
     ini_count = np.empty(0)
 
-    for i in np.arange(197, 198):
+    for i in np.arange(120, 121):
         start = time.perf_counter()
         idx_inte_pts = sen_pts_gen2(points, cam_loc[i], rot_mat_set[i], dist[i])
         end = time.perf_counter()
@@ -490,12 +503,12 @@ def my_ray_casting5():
     #     end = time.perf_counter()
     #     print('计算击中的三角面片所需时长:', end - start)
     #
-        # print(i)
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
-        # pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
-        # # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-        # o3d.visualization.draw_geometries([pcd])
+        print(i)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
+        pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
+        # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
+        o3d.visualization.draw_geometries([pcd])
     #
     #     ini_count = np.append(ini_count, idx_inte_pts)
     #
