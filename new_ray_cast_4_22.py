@@ -30,68 +30,7 @@ intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
                     [0, 0, 1]]
 
 
-def sensor_plane_point(points_per_side_=500, scale_factor_=1):
-    # To create sensor plane
-
-    x_ = np.linspace((-w/2+pixel_size/2)*scale_factor_, (w/2-pixel_size/2)*scale_factor_, 3*points_per_side_)
-    y_ = np.linspace((-h/2+pixel_size/2)*scale_factor_, (h/2-pixel_size/2)*scale_factor_, 2*points_per_side_)
-    x_, y_ = np.meshgrid(x_, y_)
-
-    x_ = x_.reshape((-1, 1))
-    y_ = y_.reshape((-1, 1))
-    z_ = (np.zeros_like(x_) - f)*scale_factor_
-
-    points_in_sensor_ = np.hstack((x_, y_,  z_))/z_
-
-    return points_in_sensor_
-
-
-def sen_pts_gen(dist_, cam_id_, points_per_side_=resol_x/3, scale_factor_=1.5):
-    # To create sensor plane
-
-    dist_s_ = dist_[cam_id_]
-
-    x_ = np.linspace((-w/2+pixel_size/2)*scale_factor_, (w/2-pixel_size/2)*scale_factor_,
-                     int(3*points_per_side_*scale_factor_))
-    y_ = np.linspace((-h/2+pixel_size/2)*scale_factor_, (h/2-pixel_size/2)*scale_factor_,
-                     int(2*points_per_side_*scale_factor_))
-    x_, y_ = np.meshgrid(x_, y_)
-
-    x_ = x_.reshape((-1, 1))
-    y_ = y_.reshape((-1, 1))
-    z_ = (np.zeros_like(x_) - f)
-
-    x_corrt = x_/z_
-    y_corrt = y_/z_
-    r_ = x_corrt ** 2 + y_corrt ** 2
-
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
-
-    pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
-    pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
-    pix_dist_pd = pd.DataFrame(np.rint(pix_dist_))
-
-    # ind_x_ = np.where((0 < pix_dist_[:, 0]) & (pix_dist_[:, 0] < resol_x), True, False)
-    # ind_y_ = np.where((0 < pix_dist_[:, 1]) & (pix_dist_[:, 1] < resol_y), True, False)
-
-    pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
-
-    pix_du_idx = pix_dist_pd.duplicated(keep='last').values
-
-    # ind_final = np.logical_and(np.logical_and(ind_x_, ind_y_), pix_du_idx)
-    ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
-    pts_for_view = np.hstack((x_, y_, z_))
-
-    filtered_pts_ = pts_for_view[ind_final]
-    print(len(pts_dist), len(filtered_pts_), resol_x*resol_y)
-
-    # visualize_camera(pts_for_view, pts_for_view[ind_final])
-
-    return filtered_pts_
-
-
-def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
+def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     # To create sensor plane
     pts_ = pts_
     cam_loc_ = -cam_loc_
@@ -132,14 +71,21 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     pix_dist_pd = pd.DataFrame(pix_dist_)
     pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
 
-    filtered_pts_ = pts_[pix_inside_idx]
-    print(len(pts_dist), len(filtered_pts_), resol_x*resol_y)
+    pix_dist_pd = pd.DataFrame(np.rint(pix_dist_))
 
-    red = np.array([1, 0, 0])
-    colors_filtered = np.expand_dims(red, 0).repeat(len(pix_dist_), axis=0)
-    pcd_tar = o3d.geometry.PointCloud()
-    pcd_tar.points = o3d.utility.Vector3dVector(pix_dist_[pix_inside_idx])
-    pcd_tar.colors = o3d.utility.Vector3dVector(colors_filtered)
+    pix_du_idx = pix_dist_pd.duplicated(keep='last').values
+
+    # ind_final = np.logical_and(np.logical_and(ind_x_, ind_y_), pix_du_idx)
+    ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
+
+    # filtered_pts_ = pts_[pix_inside_idx]
+    # print(len(pts_dist), len(filtered_pts_), resol_x*resol_y)
+    #
+    # red = np.array([1, 0, 0])
+    # colors_filtered = np.expand_dims(red, 0).repeat(len(pix_dist_), axis=0)
+    # pcd_tar = o3d.geometry.PointCloud()
+    # pcd_tar.points = o3d.utility.Vector3dVector(pix_dist_[pix_inside_idx])
+    # pcd_tar.colors = o3d.utility.Vector3dVector(colors_filtered)
 
     # blue = np.array([0, 0, 1])
     # pts_ref_2 = sensor_plane_point(points_per_side_=200)
@@ -149,11 +95,11 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     # pcd_ref_2.points = o3d.utility.Vector3dVector(pts_ref_2)
     # pcd_ref_2.colors = o3d.utility.Vector3dVector(colors_ref_2)
 
-    o3d.visualization.draw_geometries([pcd_tar, pcd_ref])
+    # o3d.visualization.draw_geometries([pcd_tar, pcd_ref])
 
     # visualize_camera(pts_, filtered_pts_)
 
-    return pix_inside_idx
+    return ind_final
 
 
 def find_nearest_hit_pts2(org_rays_, mesh_, scene_):
@@ -489,35 +435,37 @@ def my_ray_casting5():
     end = time.perf_counter()
     print('原始数据载入和预处理的时长为:', end-start)
 
-
     ini_count = np.empty(0)
 
-    for i in np.arange(120, 121):
+    for i in np.arange(len(cam_loc)):
         start = time.perf_counter()
-        idx_inte_pts = sen_pts_gen2(points, cam_loc[i], rot_mat_set[i], dist[i])
-        end = time.perf_counter()
-        print('生成初始光追矩阵所需时长:', end - start)
+        idx_inte_pts = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist[i])
 
-    #     start = time.perf_counter()
-    #     idx_inte_pts = find_nearest_hit_pts(cam_loc[i], rot_mat_set[i], original_sen_pts, mesh, scene)
-    #     end = time.perf_counter()
-    #     print('计算击中的三角面片所需时长:', end - start)
-    #
+        rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
+        rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
+
+        rays_starts = np.expand_dims(cam_loc[i], 0).repeat(len(rays_direction), axis=0)
+        rays_sets = np.hstack((rays_starts, rays_direction))
+        idx_inte_pts = find_nearest_hit_pts2(rays_sets, mesh, scene)
+        end = time.perf_counter()
         print(i)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
-        pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
-        # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-        o3d.visualization.draw_geometries([pcd])
+        print('计算可视相机数量时长:', end - start)
     #
-    #     ini_count = np.append(ini_count, idx_inte_pts)
-    #
-    # start = time.perf_counter()
-    # unique, counts = np.unique(ini_count, return_counts=True)
-    # end = time.perf_counter()
-    # print('去重统计所需时长:', end - start)
-    #
-    # print(counts, max(counts), min(counts))
+    #     print(i)
+    #     pcd = o3d.geometry.PointCloud()
+    #     pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
+    #     pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
+    #     # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
+    #     o3d.visualization.draw_geometries([pcd])
+
+        ini_count = np.append(ini_count, idx_inte_pts)
+
+    start = time.perf_counter()
+    unique, counts = np.unique(ini_count, return_counts=True)
+    end = time.perf_counter()
+    print('去重统计所需时长:', end - start)
+
+    print(counts, max(counts), min(counts))
 
 
 def test_duplicate():
