@@ -1,12 +1,8 @@
-import pyvista as pv
-from pyvista import examples
-import trimesh
 import open3d as o3d
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
-import sympy as sp
 import time
 
 
@@ -31,32 +27,31 @@ intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
 
 
 def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
-    # To create sensor plane
-    pts_ = pts_
-    cam_loc_ = -cam_loc_
+    '''
+    :param pts_: 点云坐标 [N x 3]
+    :param cam_loc_: 相机坐标 [1 x 3]
+    :param cam_pos_: 相机姿态，由scipy.spatial.transform模块生成
+    :param dist_s_: 畸变参数 [k1, k2, k3, k4, p1, p2]
+    :return:
+    '''
 
-    # pts_ = np.hstack((pts_, np.ones((len(pts_), 1))))
+    # 注意：一般情况下，由三维重建或者SLAM所获取的相机姿态和位置，都是以世界坐标系建立的，都是相机相对世界坐标系的位置和姿态
+    # 而在相机的外参矩阵中，应当使用的是上述矩阵的逆矩阵，很关键
+    rot_ext = np.vstack((np.hstack((cam_pos_.as_matrix(), cam_loc_.reshape((-1, 1)))),
+                         np.array([[0, 0, 0, 1]])))
+    rot_ext_2 = np.linalg.inv(rot_ext)
 
-    # cam_pos_ = cam_pos_.inv()
-
-    rot_mat_ = cam_pos_.as_matrix()
-    rot_mat_ = np.linalg.inv(rot_mat_)
-
-    # rot_ext = np.hstack((np.asarray(rot_mat_), cam_loc_.reshape((-1, 1))))
-
-    # 很重要，需要将旋转矩阵求逆，并且，还需要将唯一矩阵进行旋转才行！！！！
-    cam_loc_new = np.dot(np.asarray(rot_mat_), cam_loc_.reshape((-1, 1)))
-    rot_ext = np.hstack((np.asarray(rot_mat_), cam_loc_new))
-
-    pts_cam_ = np.dot(rot_ext, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
-    pts_cam_new = pts_cam_/(pts_cam_[:, -1].reshape((-1, 1)))
+    pts_cam_ = np.dot(rot_ext_2, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
+    pts_cam_new = pts_cam_/(pts_cam_[:, -2].reshape((-1, 1)))
 
     x_corrt = pts_cam_new[:, 0].reshape((-1, 1))
     y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
     r_ = x_corrt ** 2 + y_corrt ** 2
 
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
+    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+             + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
+    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+             + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[3]*x_corrt*y_corrt
 
     pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
     pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
@@ -76,7 +71,13 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     #
     # ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
 
-    return pix_inside_idx
+    ray_starts_ = np.dot(np.linalg.inv(rot_ext_2), np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
+    ray_starts_filtered = ray_starts_[pix_inside_idx][:, :-1]
+
+    rays_dir_ = pts_[pix_inside_idx] - ray_starts_filtered
+    rays_all_of_them_ = np.hstack((ray_starts_filtered, rays_dir_))
+
+    return pix_inside_idx, rays_all_of_them_
 
 
 def find_nearest_hit_pts(org_rays_, mesh_, scene_):
@@ -134,8 +135,8 @@ def find_nearest_hit_pts(org_rays_, mesh_, scene_):
 
     '''
     找到距离三角面片的交点与最近的顶点的索引
+    注意：同一个三角面片只能被相交一次
     '''
-
     idx_col = np.argmin(dis_pts2tri_set, axis=1)
     tri_pd = pd.DataFrame(hit_triangles)
     tri_pd_2 = tri_pd.duplicated(keep='last').values
@@ -146,6 +147,7 @@ def find_nearest_hit_pts(org_rays_, mesh_, scene_):
     找到对应顶点的索引
     这里用的是一个组合索引，np.arange(len(hit_triangles))代表索引所有的行，idx_col是对应的列索引
     得到的是：距离三角面片的交点与最近的顶点的索引
+    可能出现由相邻面片和ray的交点所求得的最近的顶点是同一点的情况，因此需要用np.unique()来进一步过滤
     '''
     idx_pts = filtered_tris[np.arange(len(filtered_tris)), idx_col_2.flatten()]
     idx_pts_2 = np.unique(idx_pts)
@@ -172,14 +174,14 @@ def visualize_camera(pts_tar, pts_ref):
     o3d.visualization.draw_geometries([pcd_ref, pcd_tar])
 
 
-def my_ray_casting5():
+def my_ray_casting():
     start = time.perf_counter()
     data = pd.read_csv("data/UAV_only4.csv")
     # print(data.head(5))
     cam_loc = data[["x", "y", "alt"]].values
     euler_ang = data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
-    dist = data[["k1", "k2", "k3", "k4"]].values
+    dist = data[["k1", "k2", "k3", "k4", "t1", "t2"]].values
 
     mesh = o3d.io.read_triangle_mesh('data/UAV_only.ply')
 
@@ -207,26 +209,26 @@ def my_ray_casting5():
 
     # for i in np.arange(len(cam_loc)):
     # for test, i should be set as 120, 197, 220
-    for i in np.arange(len(cam_loc)):
+    for i in np.arange(120, 121):
         start = time.perf_counter()
-        idx_inte_pts = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist[i])
-
-        rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
-        rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
-
-        rays_starts = np.expand_dims(cam_loc[i], 0).repeat(len(rays_direction), axis=0)
-        rays_sets = np.hstack((rays_starts, rays_direction))
-        idx_inte_pts = find_nearest_hit_pts(rays_sets, mesh, scene)
+        idx_inte_pts, rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist[i])
+        #
+        # rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
+        # rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
+        #
+        # rays_starts = np.expand_dims(cam_loc[i], 0).repeat(len(rays_direction), axis=0)
+        # rays_sets = np.hstack((rays_starts, rays_direction))
+        idx_inte_pts = find_nearest_hit_pts(rays_sets_2, mesh, scene)
         end = time.perf_counter()
         print(i)
         print('计算可视相机数量时长:', end - start)
-        #
-        # print(i)
-        # pcd = o3d.geometry.PointCloud()
-        # pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
-        # pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
-        # # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-        # o3d.visualization.draw_geometries([pcd])
+
+        print(i)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
+        pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
+        # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
+        o3d.visualization.draw_geometries([pcd])
 
         ini_count = np.append(ini_count, idx_inte_pts)
 
@@ -239,5 +241,5 @@ def my_ray_casting5():
 
 
 if __name__ == '__main__':
-    my_ray_casting5()
+    my_ray_casting()
     # test_duplicate()
