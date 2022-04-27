@@ -21,9 +21,11 @@ w, h = 13.2, 8.8
 f = 8.8
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
-intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
-                    [0, f/pixel_size, resol_y/2],
+intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
+                    [0, 3685.25307322617, resol_y / 2 - 14.8594719360401],
                     [0, 0, 1]]
+# dist: 畸变参数 [k1, k2, k3, k4, p1, p2]
+dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
 
 
 def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
@@ -48,9 +50,9 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
     r_ = x_corrt ** 2 + y_corrt ** 2
 
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+    x_dist = x_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
              + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+    y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
              + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
 
     pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
@@ -176,26 +178,23 @@ def visualize_camera(pts_tar, pts_ref):
 
 def my_ray_casting():
     start = time.perf_counter()
-    data = pd.read_csv("data/UAV_only4.csv")
+    data = pd.read_csv("data/zehao/cameras/25m30d90o.csv", encoding = "utf-8")
     # print(data.head(5))
-    cam_loc = data[["x", "y", "alt"]].values
-    euler_ang = data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
+    cam_loc = data[["X", "Y", "Z"]].values
+    euler_ang = data[["R", "P", "Y"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
-    dist = data[["k1", "k2", "k3", "k4", "t1", "t2"]].values
 
-    mesh = o3d.io.read_triangle_mesh('data/UAV_only.ply')
+    mesh = o3d.io.read_triangle_mesh('data/zehao/plys/1.ply')
+    points = np.asarray(mesh.vertices)
+    colors = np.asarray(mesh.vertex_colors)
 
-    original_data = pd.read_csv('data/UAV_only.xyz', header=None, sep=' ').to_numpy()
-    points = original_data[:, 0:3]
-    colors = original_data[:, 6::] / 255
-    normals = original_data[:, 3:6]
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    pcd.colors = o3d.utility.Vector3dVector(colors)
-    pcd.normals = o3d.utility.Vector3dVector(normals)
-
-    mesh.vertex_normals = o3d.utility.Vector3dVector(normals)
+    print(mesh.has_adjacency_list)
+    print(mesh.has_textures)
+    print(mesh.has_triangle_normals)
+    print(mesh.has_triangles)
+    print(mesh.has_vertex_colors)
+    print(mesh.has_vertex_normals)
+    print(mesh.has_vertices)
     # o3d.visualization.draw_geometries([pcd, mesh], mesh_show_wireframe=True, point_show_normal=False)
 
     mesh_for_ray = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
@@ -209,9 +208,9 @@ def my_ray_casting():
 
     # for i in np.arange(len(cam_loc)):
     # for test, i should be set as 120, 197, 220
-    for i in np.arange(120, 121):
+    for i in np.arange(120, 131):
         start = time.perf_counter()
-        idx_inte_pts, rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist[i])
+        idx_inte_pts, rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist)
         #
         # rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
         # rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
