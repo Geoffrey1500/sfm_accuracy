@@ -24,6 +24,7 @@ pixel_size = np.average([w/resol_x, h/resol_y])
 intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
                     [0, 3685.25307322617, resol_y / 2 - 14.8594719360401],
                     [0, 0, 1]]
+print(intrinsic_matrix)
 # dist: 畸变参数 [k1, k2, k3, k4, p1, p2]
 dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
 
@@ -50,19 +51,18 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
     r_ = x_corrt ** 2 + y_corrt ** 2
 
-    x_dist = x_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
+    # x_dist = x_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
+    #          + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
+    # y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
+    #          + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
+
+    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
              + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
+    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
              + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
 
     pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
     pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
-
-    green = np.array([0, 1, 0])
-    colors_tar = np.expand_dims(green, 0).repeat(len(pix_dist_), axis=0)
-    pcd_ref = o3d.geometry.PointCloud()
-    pcd_ref.points = o3d.utility.Vector3dVector(pix_dist_)
-    pcd_ref.colors = o3d.utility.Vector3dVector(colors_tar)
 
     pix_dist_pd = pd.DataFrame(pix_dist_)
     pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
@@ -84,8 +84,6 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
 
 def find_nearest_hit_pts(org_rays_, mesh_, scene_):
     '''
-    :param cam_loc_: 相机位置
-    :param cam_pos_: 相机姿态
     :param org_rays_: 用于批量光追的光线的初始位置
     :param mesh_: o3d 格式的 mesh 模型
     :param scene_: 光追场景
@@ -184,7 +182,7 @@ def my_ray_casting():
     euler_ang = data[["R", "P", "Y"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
 
-    mesh = o3d.io.read_triangle_mesh('data/zehao/plys/1.ply')
+    mesh = o3d.io.read_triangle_mesh('data/zehao/plys/2.ply')
     points = np.asarray(mesh.vertices)
     colors = np.asarray(mesh.vertex_colors)
 
@@ -208,7 +206,7 @@ def my_ray_casting():
 
     # for i in np.arange(len(cam_loc)):
     # for test, i should be set as 120, 197, 220
-    for i in np.arange(120, 131):
+    for i in np.arange(200, 211):
         start = time.perf_counter()
         idx_inte_pts, rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist)
         #
