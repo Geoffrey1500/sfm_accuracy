@@ -20,15 +20,35 @@ print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
 w, h = 13.2, 8.8
 f = 8.8
 fov = 84
+fov_w = np.arctan(w/2/f)/np.pi*180*2
+fov_h = np.arctan(h/2/f)/np.pi*180*2
+
 resol_x, resol_y = 5472, 3648
+cx, cy = -26.1377554238884, -14.8594719360401
+f_xy = 3685.25307322617
 pixel_size = np.average([w/resol_x, h/resol_y])
-intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
-                    [0, 3685.25307322617, resol_y / 2 - 14.8594719360401],
-                    [0, 0, 1]]
+
+# dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
+# b1, b2 是 affinity and non-orthogonality (skew) coefficients
+dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612, 0.238532277878522, -0.464831768588501])
+# dist = np.array([-0.277805722, 0.119521481, -3.27E-02, 0, -3.34E-04, 6.22E-05])
+
+bx, by = dist[-2], dist[-1]
+
+intrinsic_matrix = [[f_xy + bx, by,     resol_x / 2 + cx],
+                    [0,         f_xy,   resol_y / 2 + cy],
+                    [0,         0,      1]]
 print(intrinsic_matrix)
-# dist: 畸变参数 [k1, k2, k3, k4, p1, p2]
-# dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
-dist = np.array([-0.277805722, 0.119521481, -3.27E-02, 0, -3.34E-04, 6.22E-05])
+
+#
+# R_bx_by = np.array([[np.cos(by),    np.sin(by)*np.sin(bx),      -1*np.sin(by)*np.cos(bx)],
+#                     [0,             np.cos(bx),                 np.sin(bx)],
+#                     [np.sin(by),    -1*np.cos(by)*np.sin(bx),   np.cos(by)*np.cos(bx)]])
+#
+# R_assist = np.array([[R_bx_by[2, 2],    0,              -1*R_bx_by[0, 2]],
+#                      [0,                R_bx_by[2, 2],  -1*R_bx_by[1, 2]],
+#                      [0,                0,              1]])
+
 
 
 def angle_between_vectors(v1_, v2_):
@@ -54,61 +74,8 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     rot_ext_2 = np.linalg.inv(rot_ext)
 
     pts_cam_ = np.dot(rot_ext_2, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
-    pts_cam_new = pts_cam_/(pts_cam_[:, -2].reshape((-1, 1)))
-
-    x_corrt = pts_cam_new[:, 0].reshape((-1, 1))
-    y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
-    r_ = x_corrt ** 2 + y_corrt ** 2
-
-    # x_dist = x_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
-    #          + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    # y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
-    #          + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
-
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
-
-    pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
-    pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
-
-    pix_dist_pd = pd.DataFrame(pix_dist_)
-    pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
-    #
-    # pix_dist_pd = pd.DataFrame(np.rint(pix_dist_))
-    #
-    # pix_du_idx = pix_dist_pd.duplicated(keep='last').values
-    #
-    # ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
-
-    ray_starts_ = np.dot(np.linalg.inv(rot_ext_2), np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
-    ray_starts_filtered = ray_starts_[pix_inside_idx][:, :-1]
-
-    rays_dir_ = pts_[pix_inside_idx] - ray_starts_filtered
-    rays_all_of_them_ = np.hstack((ray_starts_filtered, rays_dir_))
-
-    return rays_all_of_them_
-
-
-def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
-    '''
-    :param pts_: 点云坐标 [N x 3]
-    :param cam_loc_: 相机坐标 [1 x 3]
-    :param cam_pos_: 相机姿态，由scipy.spatial.transform模块生成
-    :param dist_s_: 畸变参数 [k1, k2, k3, k4, p1, p2]
-    :return:
-    '''
-
-    # 注意：一般情况下，由三维重建或者SLAM所获取的相机姿态和位置，都是以世界坐标系建立的，都是相机相对世界坐标系的位置和姿态
-    # 而在相机的外参矩阵中，应当使用的是上述矩阵的逆矩阵，很关键
-    rot_ext = np.vstack((np.hstack((cam_pos_.as_matrix(), cam_loc_.reshape((-1, 1)))),
-                         np.array([[0, 0, 0, 1]])))
-    rot_ext_2 = np.linalg.inv(rot_ext)
-
-    pts_cam_ = np.dot(rot_ext_2, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
     angles = angle_between_vectors(pts_cam_[:, :3], np.array([[0, 0, 1]]))
-    angle_idx = angles.flatten() <= fov/2*1.3
+    angle_idx = angles.flatten() <= fov/2*1.25
 
     pts_cam_new = pts_cam_[:, :3]/(pts_cam_[:, -2].reshape((-1, 1)))
 
@@ -116,25 +83,20 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     y_corrt = pts_cam_new[:, 1].reshape((-1, 1))
     r_ = x_corrt ** 2 + y_corrt ** 2
 
-    # x_dist = x_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
-    #          + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    # y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
-    #          + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
+    x_prime_ = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3) + dist_s_[3] * (r_**4)) \
+              + dist_s_[4]*(r_ + 2*x_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
+    y_prime_ = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3) + dist_s_[3] * (r_**4)) \
+             + dist_s_[5]*(r_ + 2*y_corrt**2) + 2*dist_s_[4]*x_corrt*y_corrt
 
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
-
-    pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
+    pts_dist = np.hstack((x_prime_, y_prime_, np.ones_like(x_prime_)))
     pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
 
     pix_dist_pd = pd.DataFrame(pix_dist_)
-    pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
+    pix_inside_idx = ((0 < pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 < pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
 
     ind_final = np.logical_and(pix_inside_idx, angle_idx)
 
-    ray_starts_ = np.dot(np.linalg.inv(rot_ext_2), np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
+    ray_starts_ = np.dot(rot_ext, np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
     ray_starts_filtered = ray_starts_[ind_final][:, :-1]
 
     rays_dir_ = pts_[ind_final] - ray_starts_filtered
@@ -265,7 +227,9 @@ def my_ray_casting():
     # for test, i should be set as 120, 197, 220
     for i in np.arange(0, 2):
         start = time.perf_counter()
-        rays_sets_2 = sen_pts_gen2(points, cam_loc[i], rot_mat_set[i], dist)
+        print("第n个相机", i)
+        print(cam_loc[i])
+        rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist)
         #
         # rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
         # rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
