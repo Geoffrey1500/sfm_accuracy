@@ -12,10 +12,10 @@ import time
 分辨率：5472×3648
 像元大小：2.4123 um
 焦距：8.8 mm
-FOV：84°？
+FOV：84° 对角线分辨率
 '''
 
-# print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
+print(np.arctan((np.sqrt(13.2**2 + 8.8**2)/2)/8.8)/np.pi*180*2)
 
 w, h = 13.2, 8.8
 f = 8.8
@@ -26,12 +26,17 @@ print(fov_w)
 print(fov_h)
 resol_x, resol_y = 5472, 3648
 pixel_size = np.average([w/resol_x, h/resol_y])
-intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
-                    [0, 3685.25307322617, resol_y / 2 - 14.8594719360401],
+# intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
+#                     [0, 3685.25307322617, resol_y / 2 - 14.8594719360401],
+#                     [0, 0, 1]]
+
+intrinsic_matrix = [[f/pixel_size, 0, resol_x/2],
+                    [0, f/pixel_size, resol_y/2],
                     [0, 0, 1]]
 print(intrinsic_matrix)
 # dist: 畸变参数 [k1, k2, k3, k4, p1, p2]
-dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
+# dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
+dist = np.array([-0.277805722, 0.119521481, -3.27E-02, 0, -3.34E-04, 6.22E-05])
 
 
 def angle_between_vectors(v1_, v2_):
@@ -57,8 +62,15 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     rot_ext_2 = np.linalg.inv(rot_ext)
 
     pts_cam_ = np.dot(rot_ext_2, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
+
+    angles_x = angle_between_vectors(pts_cam_[:, :3]*np.array([[1, 0, 1]]), np.array([[0, 0, 1]]))
+    angle_idx_x = angles_x.flatten() <= fov_w / 2
+
+    angles_y = angle_between_vectors(pts_cam_[:, :3] * np.array([[0, 1, 1]]), np.array([[0, 0, 1]]))
+    angle_idx_y = angles_y.flatten() <= fov_h / 2
+
     angles = angle_between_vectors(pts_cam_[:, :3], np.array([[0, 0, 1]]))
-    angle_idx = angles.flatten() <= fov/2
+    angle_idx = angles.flatten() <= fov / 2 * 1.5
 
     pts_cam_new = pts_cam_[:, :3]/(pts_cam_[:, -2].reshape((-1, 1)))
 
@@ -71,10 +83,13 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     # y_dist = y_corrt * ((1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))/(1 + dist_s_[3] * r_)) \
     #          + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
 
-    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
-    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
-             + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
+    x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
+    y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3))
+
+    # x_dist = x_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+    #          + 2*dist_s_[4]*x_corrt*y_corrt + dist_s_[5]*(r_ + 2*x_corrt**2)
+    # y_dist = y_corrt * (1 + dist_s_[0] * r_ + dist_s_[1] * (r_ ** 2) + dist_s_[2] * (r_ ** 3)) \
+    #          + dist_s_[4]*(r_ + 2*y_corrt**2) + 2*dist_s_[5]*x_corrt*y_corrt
 
     pts_dist = np.hstack((x_dist, y_dist, np.ones_like(x_dist)))
     pix_dist_ = np.dot(intrinsic_matrix, pts_dist.T).T
@@ -88,6 +103,7 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     #
     # ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
 
+    ind_final = np.logical_and(pix_inside_idx, np.logical_and(angle_idx_x, angle_idx_y))
     ind_final = np.logical_and(pix_inside_idx, angle_idx)
 
     ray_starts_ = np.dot(np.linalg.inv(rot_ext_2), np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
@@ -96,7 +112,7 @@ def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     rays_dir_ = pts_[ind_final] - ray_starts_filtered
     rays_all_of_them_ = np.hstack((ray_starts_filtered, rays_dir_))
 
-    visualize_camera(pts_[pix_inside_idx], pts_[ind_final])
+    visualize_camera(pts_, pts_[ind_final])
 
     return rays_all_of_them_
 
@@ -118,7 +134,7 @@ def visualize_camera(pts_tar, pts_ref):
 
 
 def my_ray_casting():
-    scale_factor_ = 3
+    scale_factor_ = 1.5
     points_per_side_ = 30
     x_ = np.linspace((-w / 2 + pixel_size / 2) * scale_factor_, (w / 2 - pixel_size / 2) * scale_factor_,
                      int(3 * points_per_side_ * scale_factor_))
@@ -131,7 +147,7 @@ def my_ray_casting():
     z_ = (np.zeros_like(x_) - f)
 
     points_co = np.hstack((x_, y_, z_))
-    rot_mat_set = R.from_euler('yxz', np.array([0, 180, -220]), degrees=True)
+    rot_mat_set = R.from_euler('yxz', np.array([0, 180, 0]), degrees=True)
     cam_location = np.array([0, 0, 0])
 
     sen_pts_gen(points_co, cam_location, rot_mat_set, dist)

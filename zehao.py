@@ -12,7 +12,7 @@ import time
 分辨率：5472×3648
 像元大小：2.4123 um
 焦距：8.8 mm
-FOV：84°？
+FOV：84° 对角线分辨率
 '''
 
 print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
@@ -27,7 +27,8 @@ intrinsic_matrix = [[3685.25307322617, 0, resol_x / 2 - 26.1377554238884],
                     [0, 0, 1]]
 print(intrinsic_matrix)
 # dist: 畸变参数 [k1, k2, k3, k4, p1, p2]
-dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
+# dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612])
+dist = np.array([-0.277805722, 0.119521481, -3.27E-02, 0, -3.34E-04, 6.22E-05])
 
 
 def angle_between_vectors(v1_, v2_):
@@ -107,7 +108,7 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
 
     pts_cam_ = np.dot(rot_ext_2, np.hstack((pts_, np.ones((len(pts_), 1)))).T).T
     angles = angle_between_vectors(pts_cam_[:, :3], np.array([[0, 0, 1]]))
-    angle_idx = angles.flatten() <= fov/2
+    angle_idx = angles.flatten() <= fov/2*1.3
 
     pts_cam_new = pts_cam_[:, :3]/(pts_cam_[:, -2].reshape((-1, 1)))
 
@@ -132,12 +133,6 @@ def sen_pts_gen2(pts_, cam_loc_, cam_pos_, dist_s_):
     pix_inside_idx = ((0 <= pix_dist_pd[0]) & (pix_dist_pd[0] < resol_x) & (0 <= pix_dist_pd[1]) & (pix_dist_pd[1] < resol_y)).values
 
     ind_final = np.logical_and(pix_inside_idx, angle_idx)
-    #
-    # pix_dist_pd = pd.DataFrame(np.rint(pix_dist_))
-    #
-    # pix_du_idx = pix_dist_pd.duplicated(keep='last').values
-    #
-    # ind_final = np.logical_and(pix_inside_idx, ~pix_du_idx)
 
     ray_starts_ = np.dot(np.linalg.inv(rot_ext_2), np.hstack((pts_dist, np.ones((len(pts_dist), 1)))).T).T
     ray_starts_filtered = ray_starts_[ind_final][:, :-1]
