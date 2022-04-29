@@ -1,54 +1,8 @@
 import open3d as o3d
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
 import time
-
-
-''' 
-大疆Phantom 4 Pro
-传感器大小：1英寸 13.2 mm x 8.8 mm
-分辨率：5472×3648
-像元大小：2.4123 um
-焦距：8.8 mm
-FOV：84° 对角线分辨率
-'''
-
-print(np.arctan((13.2/2)/8.8)/np.pi*180*2)
-
-w, h = 13.2, 8.8
-f = 8.8
-fov = 84
-fov_w = np.arctan(w/2/f)/np.pi*180*2
-fov_h = np.arctan(h/2/f)/np.pi*180*2
-
-resol_x, resol_y = 5472, 3648
-cx, cy = -26.1377554238884, -14.8594719360401
-f_xy = 3685.25307322617
-pixel_size = np.average([w/resol_x, h/resol_y])
-
-# dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
-# b1, b2 是 affinity and non-orthogonality (skew) coefficients
-dist = np.array([-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838, 0.000146688084883612, 0.238532277878522, -0.464831768588501])
-# dist = np.array([-0.277805722, 0.119521481, -3.27E-02, 0, -3.34E-04, 6.22E-05])
-
-bx, by = dist[-2], dist[-1]
-
-intrinsic_matrix = [[f_xy + bx, by,     resol_x / 2 + cx],
-                    [0,         f_xy,   resol_y / 2 + cy],
-                    [0,         0,      1]]
-print(intrinsic_matrix)
-
-#
-# R_bx_by = np.array([[np.cos(by),    np.sin(by)*np.sin(bx),      -1*np.sin(by)*np.cos(bx)],
-#                     [0,             np.cos(bx),                 np.sin(bx)],
-#                     [np.sin(by),    -1*np.cos(by)*np.sin(bx),   np.cos(by)*np.cos(bx)]])
-#
-# R_assist = np.array([[R_bx_by[2, 2],    0,              -1*R_bx_by[0, 2]],
-#                      [0,                R_bx_by[2, 2],  -1*R_bx_by[1, 2]],
-#                      [0,                0,              1]])
-
 
 
 def angle_between_vectors(v1_, v2_):
@@ -199,16 +153,22 @@ def visualize_camera(pts_tar, pts_ref):
     o3d.visualization.draw_geometries([pcd_ref, pcd_tar])
 
 
-def my_ray_casting():
+def my_ray_casting(cam_path_, mesh_path_, out_path_):
+    '''
+    :param cam_path_: 相机外参路径，格式为 .csv
+    :param mesh_path_: mesh文件路径，格式建议为 .ply
+    :param out_path_: 结果保存路径
+    :return:
+    '''
     start = time.perf_counter()
-    data = pd.read_csv("data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
+    data = pd.read_csv(cam_path_, encoding="utf-8")
     # print(data.head(5))
     cam_loc = data[["X", "Y", "Z"]].values
     euler_ang = data[["R", "P", "H"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
     print(euler_ang[0])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
 
-    mesh = o3d.io.read_triangle_mesh('data/zehao/plys/2.ply')
+    mesh = o3d.io.read_triangle_mesh(mesh_path_)
     points = np.asarray(mesh.vertices)
     colors = np.asarray(mesh.vertex_colors)
 
@@ -225,7 +185,7 @@ def my_ray_casting():
 
     # for i in np.arange(len(cam_loc)):
     # for test, i should be set as 120, 197, 220
-    for i in np.arange(0, 2):
+    for i in np.arange(len(cam_loc)):
         start = time.perf_counter()
         print("第n个相机", i)
         print(cam_loc[i])
@@ -241,23 +201,72 @@ def my_ray_casting():
         print(i)
         print('计算可视相机数量时长:', end - start)
 
-        print(i)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
-        pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
-        # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
-        o3d.visualization.draw_geometries([pcd])
+        # print(i)
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points[idx_inte_pts])
+        # pcd.colors = o3d.utility.Vector3dVector(colors[idx_inte_pts])
+        # # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
+        # o3d.visualization.draw_geometries([pcd])
 
         ini_count = np.append(ini_count, idx_inte_pts)
 
     start = time.perf_counter()
     unique, counts = np.unique(ini_count, return_counts=True)
+    unique = np.asarray(unique).flatten().astype(np.int32)
     end = time.perf_counter()
     print('去重统计所需时长:', end - start)
 
+    out_data_ = np.zeros((len(points), 7))
+
+    out_data_[:, :3] = points
+    out_data_[:, 3:6] = colors
+
+    out_data_[unique, np.ones_like(unique)*-1] = counts
+    np.savetxt(out_path_, out_data_)
     print(counts, max(counts), min(counts))
 
 
 if __name__ == '__main__':
-    my_ray_casting()
+    ''' 
+    大疆Phantom 4 Pro
+    传感器大小：1英寸 13.2 mm x 8.8 mm
+    分辨率：5472×3648
+    像元大小：2.4123 um
+    焦距：8.8 mm
+    FOV：84° 对角线分辨率
+    '''
+
+    w, h = 13.2, 8.8
+    f = 8.8
+    fov = 84
+    fov_w = np.arctan(w / 2 / f) / np.pi * 180 * 2
+    fov_h = np.arctan(h / 2 / f) / np.pi * 180 * 2
+
+    resol_x, resol_y = 5472, 3648
+    cx, cy = -26.1377554238884, -14.8594719360401
+    f_xy = 3685.25307322617
+    pixel_size = np.average([w / resol_x, h / resol_y])
+
+    # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
+    # b1, b2 是 affinity and non-orthogonality (skew) coefficients
+    dist = np.array(
+        [-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838,
+         0.000146688084883612, 0.238532277878522, -0.464831768588501])
+
+    bx, by = dist[-2], dist[-1]
+
+    intrinsic_matrix = [[f_xy + bx, by, resol_x / 2 + cx],
+                        [0, f_xy, resol_y / 2 + cy],
+                        [0, 0, 1]]
+    print(intrinsic_matrix)
+
+    #
+    # R_bx_by = np.array([[np.cos(by),    np.sin(by)*np.sin(bx),      -1*np.sin(by)*np.cos(bx)],
+    #                     [0,             np.cos(bx),                 np.sin(bx)],
+    #                     [np.sin(by),    -1*np.cos(by)*np.sin(bx),   np.cos(by)*np.cos(bx)]])
+    #
+    # R_assist = np.array([[R_bx_by[2, 2],    0,              -1*R_bx_by[0, 2]],
+    #                      [0,                R_bx_by[2, 2],  -1*R_bx_by[1, 2]],
+    #                      [0,                0,              1]])
+    my_ray_casting("data/zehao/cameras/25m30d90o.csv", "data/zehao/plys/2.ply", '001.txt')
     # test_duplicate()
