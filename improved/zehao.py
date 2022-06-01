@@ -268,5 +268,5 @@ if __name__ == '__main__':
     # R_assist = np.array([[R_bx_by[2, 2],    0,              -1*R_bx_by[0, 2]],
     #                      [0,                R_bx_by[2, 2],  -1*R_bx_by[1, 2]],
     #                      [0,                0,              1]])
-    my_ray_casting("data/zehao/cameras/25m30d90o.csv", "data/zehao/plys/2.ply", '001.txt')
+    my_ray_casting("../data/zehao/cameras/25m30d90o.csv", "../data/zehao/plys/2.ply", '001.txt')
     # test_duplicate()
