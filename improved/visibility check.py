@@ -103,20 +103,20 @@ def find_nearest_hit_pts(org_rays_, mesh_, scene_):
     # print(len(inter_pts_cors), len(triangle_index))
 
     '''
-    找到距离三角面片的交点与最近的顶点，这里用的距离是 Manhattan Distance，用于加速计算
+    找到距离三角面片的交点与最近的顶点的索引，这里用的距离是 Manhattan Distance，用于加速计算
     '''
     dis_pts2tri_1 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_1), axis=1).reshape(-1, 1)
     dis_pts2tri_2 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_2), axis=1).reshape(-1, 1)
     dis_pts2tri_3 = np.sum(np.abs(inter_pts_cors - tri_pts_cors_3), axis=1).reshape(-1, 1)
 
     dis_pts2tri_set = np.hstack((dis_pts2tri_1, dis_pts2tri_2, dis_pts2tri_3))
+    idx_col = np.argmin(dis_pts2tri_set, axis=1)
     # print(dis_pts2tri_set)
 
     '''
     找到距离三角面片的交点与最近的顶点的索引
     注意：同一个三角面片只能被相交一次
     '''
-    idx_col = np.argmin(dis_pts2tri_set, axis=1)
     tri_pd = pd.DataFrame(hit_triangles)
     tri_pd_2 = tri_pd.duplicated(keep='last').values
 
@@ -154,10 +154,10 @@ def visualize_camera(pts_tar, pts_ref):
     o3d.visualization.draw_geometries([pcd_ref, pcd_tar])
 
 
-def my_ray_casting(cam_path_, mesh_path_, out_path_):
+def my_ray_casting(cam_path_, mesh_input_):
     '''
     :param cam_path_: 相机外参路径，格式为 .csv
-    :param mesh_path_: mesh文件路径，格式建议为 .ply
+    :param mesh_inupt_: mesh文件路径，格式建议为 .ply
     :param out_path_: 结果保存路径
     :return:
     '''
@@ -169,24 +169,18 @@ def my_ray_casting(cam_path_, mesh_path_, out_path_):
     print(euler_ang[0])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
 
-    mesh = o3d.io.read_triangle_mesh(mesh_path_)
-    points = np.asarray(mesh.vertices)
-    colors = np.asarray(mesh.vertex_colors)
-    print("Try to render a mesh with normals (exist: " +
-          str(mesh.has_vertex_normals()) + ") and colors (exist: " +
-          str(mesh.has_vertex_colors()) + ")")
-    normals = np.asarray(mesh.vertex_normals)
+    points = np.asarray(mesh_input_.vertices)
 
     # o3d.visualization.draw_geometries([mesh], mesh_show_wireframe=True, point_show_normal=False)
 
-    mesh_for_ray = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
+    mesh_for_ray = o3d.t.geometry.TriangleMesh.from_legacy(mesh_input_)
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(mesh_for_ray)
 
     end = time.perf_counter()
     print('原始数据载入和预处理的时长为:', end-start)
 
-    ini_count = np.empty(0)
+    big_idx_map = np.zeros((len(points), len(cam_loc)))
 
     # for i in np.arange(len(cam_loc)):
     # for test, i should be set as 120, 197, 220
@@ -195,13 +189,8 @@ def my_ray_casting(cam_path_, mesh_path_, out_path_):
         print("第n个相机", i)
         print(cam_loc[i])
         rays_sets_2 = sen_pts_gen(points, cam_loc[i], rot_mat_set[i], dist)
-        #
-        # rays_direction = points[idx_inte_pts]-cam_loc[i].reshape((1, -1))
-        # rays_direction = rays_direction / rays_direction.max(axis=1).reshape((-1, 1))
-        #
-        # rays_starts = np.expand_dims(cam_loc[i], 0).repeat(len(rays_direction), axis=0)
-        # rays_sets = np.hstack((rays_starts, rays_direction))
-        idx_inte_pts = find_nearest_hit_pts(rays_sets_2, mesh, scene)
+
+        idx_inte_pts = find_nearest_hit_pts(rays_sets_2, mesh_input_, scene)
         end = time.perf_counter()
         print(i)
         print('计算可视相机数量时长:', end - start)
@@ -213,22 +202,9 @@ def my_ray_casting(cam_path_, mesh_path_, out_path_):
         # # pcd.normals = o3d.utility.Vector3dVector(normals[ans['primitive_ids'].numpy()])
         # o3d.visualization.draw_geometries([pcd])
 
-        ini_count = np.append(ini_count, idx_inte_pts)
+        big_idx_map[idx_inte_pts, i] = 1
 
-    start = time.perf_counter()
-    unique, counts = np.unique(ini_count, return_counts=True)
-    unique = np.asarray(unique).flatten().astype(np.int32)
-    end = time.perf_counter()
-    print('去重统计所需时长:', end - start)
-
-    out_data_ = np.zeros((len(points), 7))
-
-    out_data_[:, :3] = points
-    out_data_[:, 3:6] = colors
-
-    out_data_[unique, np.ones_like(unique)*-1] = counts
-    np.savetxt(out_path_, out_data_)
-    print(counts, max(counts), min(counts))
+    return big_idx_map
 
 
 if __name__ == '__main__':
@@ -265,13 +241,18 @@ if __name__ == '__main__':
                         [0, 0, 1]]
     print(intrinsic_matrix)
 
-    #
-    # R_bx_by = np.array([[np.cos(by),    np.sin(by)*np.sin(bx),      -1*np.sin(by)*np.cos(bx)],
-    #                     [0,             np.cos(bx),                 np.sin(bx)],
-    #                     [np.sin(by),    -1*np.cos(by)*np.sin(bx),   np.cos(by)*np.cos(bx)]])
-    #
-    # R_assist = np.array([[R_bx_by[2, 2],    0,              -1*R_bx_by[0, 2]],
-    #                      [0,                R_bx_by[2, 2],  -1*R_bx_by[1, 2]],
-    #                      [0,                0,              1]])
-    my_ray_casting("../data/zehao/cameras/25m30d90o.csv", "../data/zehao/plys/2.ply", '001.txt')
+
+    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+    idx_of_all_ = my_ray_casting("../data/zehao/cameras/25m30d90o.csv", mesh_test)
+
+    mesh_vertices = np.asarray(mesh_test.vertices)
+
+    new_data = np.zeros((len(mesh_vertices), 7))
+
+    new_data[:, :3] = mesh_vertices
+    new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
+
+    new_data[:, -1] = np.sum(idx_of_all_, axis=1)
+
+    np.savetxt('001.txt', new_data)
     # test_duplicate()
