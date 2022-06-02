@@ -207,6 +207,94 @@ def my_ray_casting(cam_path_, mesh_input_):
     return big_idx_map
 
 
+def pts_cam_ang(cam_locs_, pts_locs_):
+    '''
+
+    :param idx_map_: 符合可视性检查的相机和三维点的对应索引表 NxM
+    :param cam_locs_: 相机坐标 Mx3
+    :param pts_locs_: 点坐标 Nx3
+    :return: 相机和空间点的夹角的索引表
+
+    注意：
+    在计算相机 ray 和 local 法向量的夹角过程中，暂时并未考虑相机畸变模型，后期可以考虑加上
+    '''
+
+    cam_x_, pts_x_ = np.meshgrid(cam_locs_[:, 0], pts_locs_[:, 0])
+    cam_y_, pts_y_ = np.meshgrid(cam_locs_[:, 1], pts_locs_[:, 2])
+    cam_z_, pts_z_ = np.meshgrid(cam_locs_[:, 2], pts_locs_[:, 2])
+
+    cam_big_mat_ = np.dstack((cam_x_, np.dstack((cam_y_, cam_z_)))).transpose(2, 0, 1)
+    pts_big_mat_ = np.dstack((pts_x_, np.dstack((pts_y_, pts_z_)))).transpose(2, 0, 1)
+
+    dot_pr = np.sum(np.multiply(cam_big_mat_, pts_big_mat_), axis=0)
+    norms = np.linalg.norm(cam_big_mat_, axis=0, keepdims=True) * np.linalg.norm(pts_big_mat_, axis=0, keepdims=True)
+
+    # print(cam_big_mat_)
+    # print(pts_big_mat_)
+
+    print(dot_pr)
+    print(norms)
+    # print(np.linalg.norm(cam_big_mat_, axis=2, keepdims=True))
+
+    # print(np.multiply(cam_big_mat_, pts_big_mat_))
+    angs = np.rad2deg(np.arccos(dot_pr / norms[0]))
+    print(angs)
+
+
+
+# if __name__ == '__main__':
+#     '''
+#     大疆Phantom 4 Pro
+#     传感器大小：1英寸 13.2 mm x 8.8 mm
+#     分辨率：5472×3648
+#     像元大小：2.4123 um
+#     焦距：8.8 mm
+#     FOV：84° 对角线分辨率
+#     '''
+#
+#     w, h = 13.2, 8.8
+#     f = 8.8
+#     fov = 84
+#     fov_w = np.arctan(w / 2 / f) / np.pi * 180 * 2
+#     fov_h = np.arctan(h / 2 / f) / np.pi * 180 * 2
+#
+#     resol_x, resol_y = 5472, 3648
+#     cx, cy = -26.1377554238884, -14.8594719360401
+#     f_xy = 3685.25307322617
+#     pixel_size = np.average([w / resol_x, h / resol_y])
+#
+#     # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
+#     # b1, b2 是 affinity and non-orthogonality (skew) coefficients
+#     dist = np.array(
+#         [-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838,
+#          0.000146688084883612, 0.238532277878522, -0.464831768588501])
+#
+#     bx, by = dist[-2], dist[-1]
+#
+#     intrinsic_matrix = [[f_xy + bx, by, resol_x / 2 + cx],
+#                         [0, f_xy, resol_y / 2 + cy],
+#                         [0, 0, 1]]
+#     print(intrinsic_matrix)
+#
+#     mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+#     idx_of_all_ = my_ray_casting("../data/zehao/cameras/25m30d90o.csv", mesh_test)
+#
+#
+#
+#
+#     mesh_vertices = np.asarray(mesh_test.vertices)
+#
+#     new_data = np.zeros((len(mesh_vertices), 7))
+#
+#     new_data[:, :3] = mesh_vertices
+#     new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
+#
+#     new_data[:, -1] = np.sum(idx_of_all_, axis=1)
+#
+#     np.savetxt('001.txt', new_data)
+#     # test_duplicate()
+
+
 if __name__ == '__main__':
     ''' 
     大疆Phantom 4 Pro
@@ -216,7 +304,6 @@ if __name__ == '__main__':
     焦距：8.8 mm
     FOV：84° 对角线分辨率
     '''
-
     w, h = 13.2, 8.8
     f = 8.8
     fov = 84
@@ -241,18 +328,24 @@ if __name__ == '__main__':
                         [0, 0, 1]]
     print(intrinsic_matrix)
 
+    cam_loc = np.array([[0, 1, 2],
+                        [1, 2, 3],
+                        [2, 3, 4],
+                        [3, 4, 5]])
 
-    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
-    idx_of_all_ = my_ray_casting("../data/zehao/cameras/25m30d90o.csv", mesh_test)
+    pts_loc = np.array([[0, 0, 0],
+                        [1, 1, 1],
+                        [2, 2, 2],
+                        [3, 3, 3],
+                        [4, 4, 4],
+                        [5, 5, 5],
+                        [6, 6, 6]])
 
-    mesh_vertices = np.asarray(mesh_test.vertices)
+    pts_cam_ang(cam_loc, pts_loc)
 
-    new_data = np.zeros((len(mesh_vertices), 7))
-
-    new_data[:, :3] = mesh_vertices
-    new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
-
-    new_data[:, -1] = np.sum(idx_of_all_, axis=1)
-
-    np.savetxt('001.txt', new_data)
-    # test_duplicate()
+    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
+    print("Try to render a mesh with normals (exist: " +
+          str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
+          str(mesh_test.has_vertex_colors()) + ")")
+    o3d.visualization.draw_geometries([mesh_test])
+    print("A mesh with no normals and no colors does not look good.")
