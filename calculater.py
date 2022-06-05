@@ -13,18 +13,18 @@ def storeTree(inputTree, filename):
     fw.close()
 
 
-reference_points = o3d.io.read_point_cloud("data/UAV_B_mesh.xyzrgb")
-o3d.io.write_point_cloud("data/UAV_B_mesh.ply", reference_points)
+reference_points = o3d.io.read_point_cloud("data/for_paper/Laser_B.pcd")
+# o3d.io.write_point_cloud("data/UAV_B_mesh.ply", reference_points)
 
 # np.savetxt('reference_points.txt', reference_points)
 
 # rng = np.random.RandomState(0)
 # X = rng.random_sample((10, 3))  # 10 points in 3 dimensions
 
-# xyz_load = np.asarray(reference_points.points)
-# tree = KDTree(xyz_load, leaf_size=2)
+xyz_load = np.asarray(reference_points.points)
+tree = KDTree(xyz_load, leaf_size=2)
 # s = pickle.dumps(tree)
-# storeTree(tree, "tree_2.txt")
+storeTree(tree, "data/for_paper/Laser_B_tree.txt")
 # print(X[:1])
 # print(tree.query_radius(X[:1], r=0.3, count_only=True))
 #
