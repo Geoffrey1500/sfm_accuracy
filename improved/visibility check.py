@@ -2,6 +2,7 @@ import open3d as o3d
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial import distance_matrix
 import trimesh
 import time
 
@@ -11,6 +12,12 @@ def angle_between_vectors(v1_, v2_):
     norms_ = np.linalg.norm(v1_, axis=1, keepdims=True) * np.linalg.norm(v2_, axis=1, keepdims=True)
 
     return np.rad2deg(np.arccos(dot_pr / norms_))
+
+
+def grab_tree(filename):
+    import pickle
+    fr = open(filename, 'rb')
+    return pickle.load(fr)
 
 
 def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
@@ -236,16 +243,19 @@ def pts_cam_ang(cam_locs_, pts_locs_, pts_norms_, thre_=30):
 
     # print(np.multiply(cam_big_mat_, pts_big_mat_))
     angs_ = np.rad2deg(np.arccos(dot_pr / norms_cal_[0]))
-    print(np.min(angs_, axis=1))
-    print(angs_.shape)
+    # print("打印夹角组合", angs_)
+    # print(np.min(angs_, axis=1))
+    # print(angs_.shape)
 
     angs_idx = angs_ < thre_
-    print(angs_idx)
+    # print(angs_idx)
 
     return angs_idx
 
 
-def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, resolution=6):
+    # cam_ = cam_.reshape((1, -1))
+    target_ = target_.flatten()
     vector_ = cam_ - target_
     r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
     r_axis = np.cross(axis_, vector_)
@@ -262,7 +272,7 @@ def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3,
     tran_1_ = [0, 0, -0.5*height_]
     tran_2_ = target_
 
-    radius_ = repro_err*pix_size_*(0.5*height_/focal_)
+    radius_ = ray_radius_in_pix*pix_size_*(0.5*height_/focal_)
     # print("圆锥的投影半径 ", radius_)
 
     cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
@@ -284,7 +294,7 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
 
     cam_1_, cam_2_ = np.meshgrid(samp_rate_, samp_rate_)
     min_cam_samp_rate_ = np.maximum(cam_1_, cam_2_)
-    min_cam_samp_rate_[np.eye(len(min_cam_samp_rate_), dtype=np.bool)] = 0
+    min_cam_samp_rate_[np.eye(len(min_cam_samp_rate_), dtype=np.bool_)] = 0
     cam_samp_new = mat_mask_*min_cam_samp_rate_
 
     cam_locs_1_ = np.expand_dims(cam_locs_, 0).repeat(len(cam_locs_), axis=0)
@@ -293,35 +303,38 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
     cam_locs_2_ = np.expand_dims(cam_locs_.T, 0).repeat(len(cam_locs_), axis=0)
     cam_locs_2_after = cam_locs_2_.transpose(1, 2, 0)
 
-    print(cam_locs_1_after)
-    print(cam_locs_2_after)
+    # print(cam_locs_1_after)
+    # print(cam_locs_2_after)
 
     dot_pr = np.sum(np.multiply(cam_locs_1_after, cam_locs_2_after), axis=0)
     norms_cal_ = np.linalg.norm(cam_locs_1_after, axis=0, keepdims=True) * np.linalg.norm(cam_locs_2_after, axis=0, keepdims=True)
 
-    ang_ = np.rad2deg(np.arccos(dot_pr / norms_cal_[0]))
+    int_val = dot_pr / norms_cal_[0]
+    int_val[np.eye(len(int_val), dtype=np.bool_)] = 0
+
+    ang_ = np.rad2deg(np.arccos(int_val))
     # print(ang_)
 
     utility_ = np.where(ang_ < 20, 5, 15)
 
     factor_ = -1*((ang_-20)**2)/(2*utility_**2)
-    factor_[np.eye(len(factor_), dtype=np.bool)] = 0
+    factor_[np.eye(len(factor_), dtype=np.bool_)] = 0
     factor_new = mat_mask_ * factor_
 
     weighted_ang = np.exp(factor_new)
-    weighted_ang[np.eye(len(weighted_ang), dtype=np.bool)] = 0
+    weighted_ang[np.eye(len(weighted_ang), dtype=np.bool_)] = 0
     weighted_ang_new = mat_mask_ * weighted_ang
-    print(weighted_ang)
+    # print(weighted_ang)
 
     mvs_error_ = weighted_ang_new*cam_samp_new
     mvs_error_[mvs_error_ >= np.max(samp_rate_)] = 0
     # mvs_radius_ = 1/mvs_error_
-    print(mvs_error_)
+    # print(mvs_error_)
 
     return mvs_error_
 
 
-def boolean_of_cone(cam_a_loc_, cam_b_loc_, pts_loc_):
+def boolean_of_cone(pts_loc_, cam_a_loc_, cam_b_loc_):
     cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
     mesh_a_ = trimesh.Trimesh(vertices=np.asarray(cone_a_.vertices), faces=np.asarray(cone_a_.triangles))
 
@@ -336,15 +349,19 @@ def boolean_of_cone(cam_a_loc_, cam_b_loc_, pts_loc_):
 
 def cam_boolean(pts_locs_, cam_locs_, mvs_error_):
     sorted_ = np.argsort(mvs_error_.flatten())
-    sorted_idx_ = np.array([divmod(sorted_[0], mvs_error_.shape[1]),
-                            divmod(sorted_[1], mvs_error_.shape[1]),
-                            divmod(sorted_[2], mvs_error_.shape[1])])
+    num_of_zero = mvs_error_.shape[1] + (mvs_error_.shape[1] - 1 + 1)*(mvs_error_.shape[1] - 1)/2
+    sorted_idx_ = np.array([divmod(sorted_[np.int32(num_of_zero)], mvs_error_.shape[1]),
+                            divmod(sorted_[np.int32(num_of_zero + 1)], mvs_error_.shape[1]),
+                            divmod(sorted_[np.int32(num_of_zero + 2)], mvs_error_.shape[1])], dtype=np.int32)
 
     print(sorted_idx_)
+    print([mvs_error_[sorted_idx_[0, 0], sorted_idx_[0, 1]],
+           mvs_error_[sorted_idx_[1, 0], sorted_idx_[1, 1]],
+           mvs_error_[sorted_idx_[2, 0], sorted_idx_[2, 1]]])
 
-    int_1_ = boolean_of_cone(pts_locs_, cam_locs_[0, 0], cam_locs_[0, 1])
-    int_2_ = boolean_of_cone(pts_locs_, cam_locs_[1, 0], cam_locs_[1, 1])
-    int_3_ = boolean_of_cone(pts_locs_, cam_locs_[2, 0], cam_locs_[2, 1])
+    int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]])
+    int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]])
+    int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]])
 
     int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='scad')
     int_1_2_renew_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
@@ -378,6 +395,8 @@ if __name__ == '__main__':
     f_xy = 3685.25307322617
     pixel_size = np.average([w / resol_x, h / resol_y])
 
+    ray_radius_in_pix = 3
+
     # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
     # b1, b2 是 affinity and non-orthogonality (skew) coefficients
     dist = np.array(
@@ -391,41 +410,82 @@ if __name__ == '__main__':
                         [0, 0, 1]]
     print(intrinsic_matrix)
 
-    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+    mesh_test = o3d.io.read_triangle_mesh("../data/for_paper/Zone_A.glb")
     mesh_vertices = np.asarray(mesh_test.vertices)
     norms = np.asarray(mesh_test.vertex_normals)
-    print(norms)
-    # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
+    # print(norms)
     # print("Try to render a mesh with normals (exist: " +
     #       str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
     #       str(mesh_test.has_vertex_colors()) + ")")
     # o3d.visualization.draw_geometries([mesh_test])
     # print("A mesh with no normals and no colors does not look good.")
 
-    cam_data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
+    cam_data = pd.read_csv("../data/for_paper/UAV_A.csv", encoding="utf-8")
     # print(data.head(5))
-    cam_loc = cam_data[["X", "Y", "Z"]].values
-    euler_ang = cam_data[["R", "P", "H"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
+    cam_loc = cam_data[["x", "y", "alt"]].values
+    euler_ang = cam_data[["roll", "pitch", "heading"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
+    # 以下适用于photoscan的输出，上面符合RC的输出
+    # cam_loc = cam_data[["X", "Y", "Z"]].values
+    # euler_ang = cam_data[["R", "P", "H"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
     print(euler_ang[0])
     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
 
     idx_of_visi_ = my_ray_casting(cam_loc, rot_mat_set, mesh_test)
+
+    # idx_of_all_zero = idx_of_visi_.sum(axis=0) != 0
+    # filtered_visi = idx_of_visi_[:, idx_of_all_zero]
+    # filtered_cam = cam_loc[idx_of_all_zero, :]
+
     ang_idx = pts_cam_ang(cam_loc, mesh_vertices, norms)
     print(ang_idx.shape, idx_of_visi_.shape)
     final_idx = ang_idx.astype(int) & idx_of_visi_.astype(int)
-    # print(np.sum(final_idx, axis=1))
+    final_idx_bool = final_idx.astype(np.bool_)
 
-    # aaa = np.sum(final_idx, axis=1)
-    # np.savetxt('test.tx2', aaa)
+    # new_data = np.zeros((len(mesh_vertices), 7))
+    #
+    # new_data[:, :3] = mesh_vertices
+    # new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
+    # new_data[:, -1] = np.sum(final_idx, axis=1)
+    # np.savetxt('visibile_A.txt', new_data)
 
-    new_data = np.zeros((len(mesh_vertices), 7))
+    pcd_ref = o3d.io.read_point_cloud("../data/for_paper/Laser_A.pcd")
+    points_in_ref = np.asarray(pcd_ref.points)
+    kdt = grab_tree("../data/for_paper/Laser_A_tree.txt")
 
-    new_data[:, :3] = mesh_vertices
-    new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
-    new_data[:, -1] = np.sum(idx_of_visi_, axis=1)
+    for i in range(len(mesh_vertices)):
+        core_point = mesh_vertices[i].reshape((1, -1))
+        cam_set = cam_loc[final_idx_bool[i]]
+        print("第", i, "个点", "进度：", i/len(mesh_vertices))
 
-    np.savetxt('directly_.txt', new_data)
-    # test_duplicate()
+        if np.sum(final_idx[i]) <= 1:
+            knn_r = 3*(25*(ray_radius_in_pix*pixel_size)/f)
+        elif np.sum(final_idx[i]) <= 2:
+            knn_r = 3*(np.average(cam_set[:, -1])*(ray_radius_in_pix*pixel_size)/f)
+            print("搜寻半径0", knn_r)
+        else:
+            print("可视相机数量：", np.sum(final_idx[i]))
+            sfm_mvs_error = mvs_error_scores(core_point, cam_set, ray_radius_in_pix*pixel_size/f)
+            error_space = cam_boolean(core_point, cam_set, sfm_mvs_error)
+            error_space_points = np.asarray(error_space.vertices)
+
+            max_distance = np.max(distance_matrix(core_point, error_space_points))
+
+            print("搜寻半径0", 3*(25*(ray_radius_in_pix*pixel_size)/f))
+            print("搜寻半径1", max_distance)
+
+            idx, dis_tree = kdt.query_radius(core_point, r=max_distance, return_distance=True)
+            idx = idx[0]
+            dis_tree = dis_tree[0]
+
+            neighbor_set = points_in_ref[idx]
+
+            signed_dis = trimesh.proximity.signed_distance(error_space, points_in_ref[idx])
+
+            idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
+            neighbor_set_inner = points_in_ref[idx[idx_inner]]
+
+            print(neighbor_set_inner)
+
 
 
 # if __name__ == '__main__':
