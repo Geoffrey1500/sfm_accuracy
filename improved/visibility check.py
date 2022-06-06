@@ -244,8 +244,17 @@ def pts_cam_ang(cam_locs_, pts_locs_, pts_norms_, thre_=30):
     return angs_idx
 
 
-def cam_scores(cam_locs_):
-    # vets_ = cam_locs_ - pts_locs_
+def cam_scores(pts_locs_, cam_locs_, scale_fac_):
+    mat_mask_ = np.triu(np.ones((len(cam_locs_), len(cam_locs_))))
+
+    vets_ = cam_locs_ - pts_locs_
+    dist_to_pts_ = np.linalg.norm(vets_, axis=1, keepdims=True)
+    samp_rate_ = 1/(dist_to_pts_*scale_fac_)
+
+    cam_1_, cam_2_ = np.meshgrid(samp_rate_, samp_rate_)
+    min_cam_samp_rate_ = np.minimum(cam_1_, cam_2_)
+    min_cam_samp_rate_[np.eye(len(min_cam_samp_rate_), dtype=np.bool)] = 0
+    cam_samp_new = mat_mask_*min_cam_samp_rate_
 
     cam_locs_1_ = np.expand_dims(cam_locs_, 0).repeat(len(cam_locs_), axis=0)
     cam_locs_1_after = cam_locs_1_.transpose(2, 0, 1)
@@ -259,14 +268,38 @@ def cam_scores(cam_locs_):
     dot_pr = np.sum(np.multiply(cam_locs_1_after, cam_locs_2_after), axis=0)
     norms_cal_ = np.linalg.norm(cam_locs_1_after, axis=0, keepdims=True) * np.linalg.norm(cam_locs_2_after, axis=0, keepdims=True)
 
-    angs_ = np.rad2deg(np.arccos(dot_pr / norms_cal_[0]))
-    angs_[np.eye(len(cam_locs_), dtype=np.bool)] = 0
+    ang_ = np.rad2deg(np.arccos(dot_pr / norms_cal_[0]))
+    # print(ang_)
 
-    ang_mask_ = np.triu(np.ones((len(cam_locs_), len(cam_locs_))))
-    ang_new = ang_mask_*angs_
+    utility_ = np.where(ang_ < 20, 5, 15)
 
+    factor_ = -1*(ang_-20)**2/(2*utility_**2)
+    factor_[np.eye(len(factor_), dtype=np.bool)] = 0
+    factor_new = mat_mask_ * factor_
 
-    print(angs_)
+    weighted_ang = np.exp(factor_new)
+    weighted_ang[np.eye(len(weighted_ang), dtype=np.bool)] = 0
+    weighted_ang_new = mat_mask_ * weighted_ang
+    print(weighted_ang)
+
+    mvs_error_ = weighted_ang_new*cam_samp_new
+    # mvs_radius_ = 1/mvs_error_
+    print(mvs_error_)
+
+    sorted_ = np.argsort(mvs_error_.flatten())
+    # mvs_max_error_ = np.argmax(mvs_error_)
+    # cam_selected_1_, cam_selected_2_ = divmod(mvs_max_error_, mvs_error_.shape[1])
+    # print(cam_selected_1_, cam_selected_2_)
+
+    sorted_idx_ = np.array([divmod(sorted_[-1], mvs_error_.shape[1]),
+                            divmod(sorted_[-2], mvs_error_.shape[1]),
+                            divmod(sorted_[-3], mvs_error_.shape[1]),
+                            divmod(sorted_[-4], mvs_error_.shape[1])])
+
+    print(sorted_idx_)
+
+    return
+
 
 # if __name__ == '__main__':
 #     '''
@@ -391,12 +424,15 @@ if __name__ == '__main__':
 
     pts_norm = np.array([[0, 0, 1]])
 
-    cam_loc = np.array([[0, 0, 1],
-                        [1, 1, 2],
-                        [2, -2, 3],
-                        [-3, 3, 4]])
+    cam_loc = np.array([[0, 0, 5],
+                        [1, 1, 5],
+                        [2, 2, 4],
+                        [3, 3, 5],
+                        [-1, -1, 3],
+                        [-2, -2, 5],
+                        [-3, -3, 4]])
 
-    cam_scores(cam_loc)
+    cam_scores(pts_loc, cam_loc, 1)
     #
     # pts_loc = np.array([[0, 0, 0],
     #                     [1, 1, 0],
@@ -414,22 +450,22 @@ if __name__ == '__main__':
     #                     [0, 0, 1],
     #                     [0, 0, 1]])
 
-    pts_cam_ang(cam_locs, pts_loc, pts_norm)
-
-    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
-
-    pts = np.asarray(mesh_test.vertices)
-    norms = np.asarray(mesh_test.vertex_normals)
-
-    data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
-    # print(data.head(5))
-    cam_locs = data[["X", "Y", "Z"]].values
-
-    print(norms)
-
-    out_ang = pts_cam_ang(cam_locs, pts, norms)
-
-    np.savetxt('ang_mat_ind.txt', out_ang)
+    # pts_cam_ang(cam_locs, pts_loc, pts_norm)
+    #
+    # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+    #
+    # pts = np.asarray(mesh_test.vertices)
+    # norms = np.asarray(mesh_test.vertex_normals)
+    #
+    # data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
+    # # print(data.head(5))
+    # cam_locs = data[["X", "Y", "Z"]].values
+    #
+    # print(norms)
+    #
+    # out_ang = pts_cam_ang(cam_locs, pts, norms)
+    #
+    # np.savetxt('ang_mat_ind.txt', out_ang)
 
     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
     # print("Try to render a mesh with normals (exist: " +
