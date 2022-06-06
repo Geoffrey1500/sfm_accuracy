@@ -2,6 +2,7 @@ import open3d as o3d
 import numpy as np
 import pandas as pd
 from scipy.spatial.transform import Rotation as R
+import trimesh
 import time
 
 
@@ -244,15 +245,45 @@ def pts_cam_ang(cam_locs_, pts_locs_, pts_norms_, thre_=30):
     return angs_idx
 
 
-def cam_scores(pts_locs_, cam_locs_, scale_fac_):
+def useful_tools(cam_, target_, axis_, pix_size_, focal_, scale_=2, repro_err=3, resolution=6):
+    vector_ = cam_ - target_
+    r_theta = np.arccos(np.dot(vector_, axis_)/(np.linalg.norm(axis_) * np.linalg.norm(vector_)))
+    r_axis = np.cross(axis_, vector_)
+    r_axis = r_axis/np.linalg.norm(r_axis)
+    # print(R_theta/np.pi*180, R_axis)
+
+    qw_ = np.cos(r_theta / 2)
+    qx_ = r_axis[0] * np.sin(r_theta/2)
+    qy_ = r_axis[1] * np.sin(r_theta/2)
+    qz_ = r_axis[2] * np.sin(r_theta/2)
+
+    height_ = np.linalg.norm(vector_)*scale_
+
+    tran_1_ = [0, 0, -0.5*height_]
+    tran_2_ = target_
+
+    radius_ = repro_err*pix_size_*(0.5*height_/focal_)
+    # print("圆锥的投影半径 ", radius_)
+
+    cone_ = o3d.geometry.TriangleMesh.create_cone(radius=radius_, height=height_, resolution=resolution)
+    r_ = cone_.get_rotation_matrix_from_quaternion([qw_, qx_, qy_, qz_])
+    cone_.translate(tran_1_)
+    cone_.rotate(r_, center=(0, 0, 0))
+
+    cone_.translate(tran_2_)
+
+    return cone_
+
+
+def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
     mat_mask_ = np.triu(np.ones((len(cam_locs_), len(cam_locs_))))
 
     vets_ = cam_locs_ - pts_locs_
     dist_to_pts_ = np.linalg.norm(vets_, axis=1, keepdims=True)
-    samp_rate_ = 1/(dist_to_pts_*scale_fac_)
+    samp_rate_ = dist_to_pts_*scale_fac_
 
     cam_1_, cam_2_ = np.meshgrid(samp_rate_, samp_rate_)
-    min_cam_samp_rate_ = np.minimum(cam_1_, cam_2_)
+    min_cam_samp_rate_ = np.maximum(cam_1_, cam_2_)
     min_cam_samp_rate_[np.eye(len(min_cam_samp_rate_), dtype=np.bool)] = 0
     cam_samp_new = mat_mask_*min_cam_samp_rate_
 
@@ -273,7 +304,7 @@ def cam_scores(pts_locs_, cam_locs_, scale_fac_):
 
     utility_ = np.where(ang_ < 20, 5, 15)
 
-    factor_ = -1*(ang_-20)**2/(2*utility_**2)
+    factor_ = -1*((ang_-20)**2)/(2*utility_**2)
     factor_[np.eye(len(factor_), dtype=np.bool)] = 0
     factor_new = mat_mask_ * factor_
 
@@ -283,93 +314,47 @@ def cam_scores(pts_locs_, cam_locs_, scale_fac_):
     print(weighted_ang)
 
     mvs_error_ = weighted_ang_new*cam_samp_new
+    mvs_error_[mvs_error_ >= np.max(samp_rate_)] = 0
     # mvs_radius_ = 1/mvs_error_
     print(mvs_error_)
 
-    sorted_ = np.argsort(mvs_error_.flatten())
-    # mvs_max_error_ = np.argmax(mvs_error_)
-    # cam_selected_1_, cam_selected_2_ = divmod(mvs_max_error_, mvs_error_.shape[1])
-    # print(cam_selected_1_, cam_selected_2_)
+    return mvs_error_
 
-    sorted_idx_ = np.array([divmod(sorted_[-1], mvs_error_.shape[1]),
-                            divmod(sorted_[-2], mvs_error_.shape[1]),
-                            divmod(sorted_[-3], mvs_error_.shape[1]),
-                            divmod(sorted_[-4], mvs_error_.shape[1])])
+
+def boolean_of_cone(cam_a_loc_, cam_b_loc_, pts_loc_):
+    cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+    mesh_a_ = trimesh.Trimesh(vertices=np.asarray(cone_a_.vertices), faces=np.asarray(cone_a_.triangles))
+
+    cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+    mesh_b_ = trimesh.Trimesh(vertices=np.asarray(cone_b_.vertices), faces=np.asarray(cone_b_.triangles))
+
+    mesh_intersect_ = trimesh.boolean.intersection([mesh_a_, mesh_b_], engine='scad')
+    mesh_intersect_renew_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
+
+    return mesh_intersect_renew_
+
+
+def cam_boolean(pts_locs_, cam_locs_, mvs_error_):
+    sorted_ = np.argsort(mvs_error_.flatten())
+    sorted_idx_ = np.array([divmod(sorted_[0], mvs_error_.shape[1]),
+                            divmod(sorted_[1], mvs_error_.shape[1]),
+                            divmod(sorted_[2], mvs_error_.shape[1])])
 
     print(sorted_idx_)
 
-    return
+    int_1_ = boolean_of_cone(pts_locs_, cam_locs_[0, 0], cam_locs_[0, 1])
+    int_2_ = boolean_of_cone(pts_locs_, cam_locs_[1, 0], cam_locs_[1, 1])
+    int_3_ = boolean_of_cone(pts_locs_, cam_locs_[2, 0], cam_locs_[2, 1])
 
+    int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='scad')
+    int_1_2_renew_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
+    int_2_3_ = trimesh.boolean.intersection([int_2_, int_3_], engine='scad')
+    int_2_3_renew_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
 
-# if __name__ == '__main__':
-#     '''
-#     大疆Phantom 4 Pro
-#     传感器大小：1英寸 13.2 mm x 8.8 mm
-#     分辨率：5472×3648
-#     像元大小：2.4123 um
-#     焦距：8.8 mm
-#     FOV：84° 对角线分辨率
-#     '''
-#
-#     w, h = 13.2, 8.8
-#     f = 8.8
-#     fov = 84
-#     fov_w = np.arctan(w / 2 / f) / np.pi * 180 * 2
-#     fov_h = np.arctan(h / 2 / f) / np.pi * 180 * 2
-#
-#     resol_x, resol_y = 5472, 3648
-#     cx, cy = -26.1377554238884, -14.8594719360401
-#     f_xy = 3685.25307322617
-#     pixel_size = np.average([w / resol_x, h / resol_y])
-#
-#     # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
-#     # b1, b2 是 affinity and non-orthogonality (skew) coefficients
-#     dist = np.array(
-#         [-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838,
-#          0.000146688084883612, 0.238532277878522, -0.464831768588501])
-#
-#     bx, by = dist[-2], dist[-1]
-#
-#     intrinsic_matrix = [[f_xy + bx, by, resol_x / 2 + cx],
-#                         [0, f_xy, resol_y / 2 + cy],
-#                         [0, 0, 1]]
-#     print(intrinsic_matrix)
-#
-#     mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
-#     mesh_vertices = np.asarray(mesh_test.vertices)
-#     norms = np.asarray(mesh_test.vertex_normals)
-#     print(norms)
-#     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
-#     # print("Try to render a mesh with normals (exist: " +
-#     #       str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
-#     #       str(mesh_test.has_vertex_colors()) + ")")
-#     # o3d.visualization.draw_geometries([mesh_test])
-#     # print("A mesh with no normals and no colors does not look good.")
-#
-#     cam_data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
-#     # print(data.head(5))
-#     cam_loc = cam_data[["X", "Y", "Z"]].values
-#     euler_ang = cam_data[["R", "P", "H"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
-#     print(euler_ang[0])
-#     rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
-#
-#     idx_of_visi_ = my_ray_casting(cam_loc, rot_mat_set, mesh_test)
-#     ang_idx = pts_cam_ang(cam_loc, mesh_vertices, norms)
-#     print(ang_idx.shape, idx_of_visi_.shape)
-#     final_idx = ang_idx.astype(int) & idx_of_visi_.astype(int)
-#     # print(np.sum(final_idx, axis=1))
-#
-#     # aaa = np.sum(final_idx, axis=1)
-#     # np.savetxt('test.tx2', aaa)
-#
-#     new_data = np.zeros((len(mesh_vertices), 7))
-#
-#     new_data[:, :3] = mesh_vertices
-#     new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
-#     new_data[:, -1] = np.sum(final_idx, axis=1)
-#
-#     np.savetxt('002.txt', new_data)
-#     # test_duplicate()
+    int_final_ = trimesh.boolean.intersection([int_1_2_renew_, int_2_3_renew_], engine='scad')
+    int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
+
+    return int_final_renew_
 
 
 if __name__ == '__main__':
@@ -381,6 +366,7 @@ if __name__ == '__main__':
     焦距：8.8 mm
     FOV：84° 对角线分辨率
     '''
+
     w, h = 13.2, 8.8
     f = 8.8
     fov = 84
@@ -405,71 +391,141 @@ if __name__ == '__main__':
                         [0, 0, 1]]
     print(intrinsic_matrix)
 
-    nx, ny = (3, 3)
-    x = np.linspace(-10, 10, nx)
-    # [0. 1. 2.]
-    y = np.linspace(-10, 10, ny)
-    # [0. 1. 2.]
-    xv, yv = np.meshgrid(x, y)
-    print(xv.ravel())
-    #[ 0.  1.  2.  0.  1.  2.  0.  1.  2.]
-    print(yv.ravel())
-    #[ 0.  0.  0.  1.  1.  1.  2.  2.  2.]
-
-    cam_locs = np.hstack((np.hstack((xv.reshape(-1, 1), yv.reshape(-1, 1))), np.ones(xv.size).reshape(-1, 1)*10))
-
-    print(cam_locs)
-
-    pts_loc = np.array([[0, 0, 0]])
-
-    pts_norm = np.array([[0, 0, 1]])
-
-    cam_loc = np.array([[0, 0, 5],
-                        [1, 1, 5],
-                        [2, 2, 4],
-                        [3, 3, 5],
-                        [-1, -1, 3],
-                        [-2, -2, 5],
-                        [-3, -3, 4]])
-
-    cam_scores(pts_loc, cam_loc, 1)
-    #
-    # pts_loc = np.array([[0, 0, 0],
-    #                     [1, 1, 0],
-    #                     [2, 2, 0],
-    #                     [3, 3, 0],
-    #                     [-1, -1, 0],
-    #                     [-2, -2, 0],
-    #                     [-3, -3, 0]])
-    #
-    # pts_norm = np.array([[0, 0, 1],
-    #                     [0, 0, 1],
-    #                     [0, 0, 1],
-    #                     [0, 0, 1],
-    #                     [0, 0, 1],
-    #                     [0, 0, 1],
-    #                     [0, 0, 1]])
-
-    # pts_cam_ang(cam_locs, pts_loc, pts_norm)
-    #
-    # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
-    #
-    # pts = np.asarray(mesh_test.vertices)
-    # norms = np.asarray(mesh_test.vertex_normals)
-    #
-    # data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
-    # # print(data.head(5))
-    # cam_locs = data[["X", "Y", "Z"]].values
-    #
-    # print(norms)
-    #
-    # out_ang = pts_cam_ang(cam_locs, pts, norms)
-    #
-    # np.savetxt('ang_mat_ind.txt', out_ang)
-
+    mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+    mesh_vertices = np.asarray(mesh_test.vertices)
+    norms = np.asarray(mesh_test.vertex_normals)
+    print(norms)
     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
     # print("Try to render a mesh with normals (exist: " +
     #       str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
     #       str(mesh_test.has_vertex_colors()) + ")")
     # o3d.visualization.draw_geometries([mesh_test])
     # print("A mesh with no normals and no colors does not look good.")
+
+    cam_data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
+    # print(data.head(5))
+    cam_loc = cam_data[["X", "Y", "Z"]].values
+    euler_ang = cam_data[["R", "P", "H"]].values * np.array([[1, 1, -1]]) + np.array([[0, 180, 0]])
+    print(euler_ang[0])
+    rot_mat_set = R.from_euler('yxz', euler_ang, degrees=True)
+
+    idx_of_visi_ = my_ray_casting(cam_loc, rot_mat_set, mesh_test)
+    ang_idx = pts_cam_ang(cam_loc, mesh_vertices, norms)
+    print(ang_idx.shape, idx_of_visi_.shape)
+    final_idx = ang_idx.astype(int) & idx_of_visi_.astype(int)
+    # print(np.sum(final_idx, axis=1))
+
+    # aaa = np.sum(final_idx, axis=1)
+    # np.savetxt('test.tx2', aaa)
+
+    new_data = np.zeros((len(mesh_vertices), 7))
+
+    new_data[:, :3] = mesh_vertices
+    new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
+    new_data[:, -1] = np.sum(idx_of_visi_, axis=1)
+
+    np.savetxt('directly_.txt', new_data)
+    # test_duplicate()
+
+
+# if __name__ == '__main__':
+#     '''
+#     大疆Phantom 4 Pro
+#     传感器大小：1英寸 13.2 mm x 8.8 mm
+#     分辨率：5472×3648
+#     像元大小：2.4123 um
+#     焦距：8.8 mm
+#     FOV：84° 对角线分辨率
+#     '''
+#     w, h = 13.2, 8.8
+#     f = 8.8
+#     fov = 84
+#     fov_w = np.arctan(w / 2 / f) / np.pi * 180 * 2
+#     fov_h = np.arctan(h / 2 / f) / np.pi * 180 * 2
+#
+#     resol_x, resol_y = 5472, 3648
+#     cx, cy = -26.1377554238884, -14.8594719360401
+#     f_xy = 3685.25307322617
+#     pixel_size = np.average([w / resol_x, h / resol_y])
+#
+#     # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
+#     # b1, b2 是 affinity and non-orthogonality (skew) coefficients
+#     dist = np.array(
+#         [-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838,
+#          0.000146688084883612, 0.238532277878522, -0.464831768588501])
+#
+#     bx, by = dist[-2], dist[-1]
+#
+#     intrinsic_matrix = [[f_xy + bx, by, resol_x / 2 + cx],
+#                         [0, f_xy, resol_y / 2 + cy],
+#                         [0, 0, 1]]
+#     print(intrinsic_matrix)
+#
+#     nx, ny = (3, 3)
+#     x = np.linspace(-10, 10, nx)
+#     # [0. 1. 2.]
+#     y = np.linspace(-10, 10, ny)
+#     # [0. 1. 2.]
+#     xv, yv = np.meshgrid(x, y)
+#     print(xv.ravel())
+#     #[ 0.  1.  2.  0.  1.  2.  0.  1.  2.]
+#     print(yv.ravel())
+#     #[ 0.  0.  0.  1.  1.  1.  2.  2.  2.]
+#
+#     cam_locs = np.hstack((np.hstack((xv.reshape(-1, 1), yv.reshape(-1, 1))), np.ones(xv.size).reshape(-1, 1)*10))
+#
+#     print(cam_locs)
+#
+#     pts_loc = np.array([[0, 0, 0]])
+#
+#     pts_norm = np.array([[0, 0, 1]])
+#
+#     cam_loc = np.array([[0, 0, 5],
+#                         [1, 1, 5],
+#                         [2, 2, 4],
+#                         [3, 3, 5],
+#                         [-1, -1, 3],
+#                         [-2, -2, 5],
+#                         [-3, -3, 4]])
+#
+#     mvs_error = mvs_error_scores(pts_loc, cam_loc, 1)
+#     #
+#     # pts_loc = np.array([[0, 0, 0],
+#     #                     [1, 1, 0],
+#     #                     [2, 2, 0],
+#     #                     [3, 3, 0],
+#     #                     [-1, -1, 0],
+#     #                     [-2, -2, 0],
+#     #                     [-3, -3, 0]])
+#     #
+#     # pts_norm = np.array([[0, 0, 1],
+#     #                     [0, 0, 1],
+#     #                     [0, 0, 1],
+#     #                     [0, 0, 1],
+#     #                     [0, 0, 1],
+#     #                     [0, 0, 1],
+#     #                     [0, 0, 1]])
+#
+#     # pts_cam_ang(cam_locs, pts_loc, pts_norm)
+#     #
+#     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
+#     #
+#     # pts = np.asarray(mesh_test.vertices)
+#     # norms = np.asarray(mesh_test.vertex_normals)
+#     #
+#     # data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
+#     # # print(data.head(5))
+#     # cam_locs = data[["X", "Y", "Z"]].values
+#     #
+#     # print(norms)
+#     #
+#     # out_ang = pts_cam_ang(cam_locs, pts, norms)
+#     #
+#     # np.savetxt('ang_mat_ind.txt', out_ang)
+#
+#     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
+#     # print("Try to render a mesh with normals (exist: " +
+#     #       str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
+#     #       str(mesh_test.has_vertex_colors()) + ")")
+#     # o3d.visualization.draw_geometries([mesh_test])
+#     # print("A mesh with no normals and no colors does not look good.")
