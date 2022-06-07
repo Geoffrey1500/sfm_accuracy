@@ -22,6 +22,10 @@ def grab_tree(filename):
     return pickle.load(fr)
 
 
+def gaussian_dis(dist_to_nei_set_, sigma_for_dis_, mu=0):
+    return (1/(sigma_for_dis_*np.sqrt(2*np.pi))) * np.e ** (-0.5*((dist_to_nei_set_-mu)/sigma_for_dis_)**2)
+
+
 def sen_pts_gen(pts_, cam_loc_, cam_pos_, dist_s_):
     '''
     :param pts_: 点云坐标 [N x 3]
@@ -414,6 +418,14 @@ def cam_boolean(pts_locs_, cam_locs_, mvs_error_, engine_="trimesh"):
     return int_final_renew_
 
 
+def neighboring_search(kdt_input_, p_i_, radius_, ref_pts_):
+    idx_nei_ = kdt_input_.query_radius(p_i_, r=radius_, return_distance=False)
+    idx_nei_ = idx_nei_[0]
+    nei_pts_set_ = ref_pts_[idx_nei_]
+
+    return nei_pts_set_
+
+
 if __name__ == '__main__':
     '''
     大疆Phantom 4 Pro
@@ -481,11 +493,11 @@ if __name__ == '__main__':
     final_idx = ang_idx.astype(int) & idx_of_visi_.astype(int)
     final_idx_bool = final_idx.astype(np.bool_)
 
-    # new_data = np.zeros((len(mesh_vertices), 7))
-    #
-    # new_data[:, :3] = mesh_vertices
-    # new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
-    # new_data[:, -1] = np.sum(final_idx, axis=1)
+    new_data = np.zeros((len(mesh_vertices), 12))  # x, y, z, r, g, b, num_of_images, knn_radius, num_of_neighbors, error_space_volumn, avg_dis, guss_avg_dis
+
+    new_data[:, :3] = mesh_vertices
+    new_data[:, 3:6] = np.asarray(mesh_test.vertex_colors)
+    new_data[:, 6] = np.sum(final_idx, axis=1)
     # np.savetxt('visibile_A.txt', new_data)
 
     pcd_ref = o3d.io.read_point_cloud("../data/for_paper/Laser_A.pcd")
@@ -498,10 +510,52 @@ if __name__ == '__main__':
         print("第", i, "个点", "进度：", i/len(mesh_vertices))
 
         if np.sum(final_idx[i]) <= 1:
-            knn_r = 3*(25*(ray_radius_in_pix*pixel_size)/f)
+        # if True:
+            knn_r = 2*(25*(ray_radius_in_pix*pixel_size)/f)
+            idx, dis_set = kdt.query_radius(core_point, r=knn_r, return_distance=True)
+            if len(idx[0]):
+            # if False:
+                new_data[i, 7] = knn_r
+                new_data[i, 8] = len(idx[0])
+                new_data[i, 9] = -1
+                new_data[i, 10] = np.average(dis_set[0])
+                gaussian_weight = np.array(gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                new_data[i, 11] = np.average(gaussian_weight_dis)
+            else:
+                dis_set, idx = kdt.query(core_point, k=1, return_distance=True)
+
+                new_data[i, 7] = -1
+                new_data[i, 8] = 1
+                new_data[i, 9] = -1
+                new_data[i, 10] = np.average(dis_set[0])
+                gaussian_weight = np.array(gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                new_data[i, 11] = np.average(gaussian_weight_dis)
+
         elif np.sum(final_idx[i]) <= 2:
-            knn_r = 3*(np.average(cam_set[:, -1])*(ray_radius_in_pix*pixel_size)/f)
-            print("搜寻半径0", knn_r)
+        # else:
+            knn_r = 2*(np.average(cam_set[:, -1])*(ray_radius_in_pix*pixel_size)/f)
+            idx, dis_set = kdt.query_radius(core_point, r=knn_r, return_distance=True)
+            if len(idx[0]):
+                new_data[i, 7] = knn_r
+                new_data[i, 8] = len(idx[0])
+                new_data[i, 9] = -1
+                new_data[i, 10] = np.average(dis_set[0])
+                gaussian_weight = np.array(gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                new_data[i, 11] = np.average(gaussian_weight_dis)
+                print("搜寻半径0", knn_r)
+            else:
+                dis_set, idx = kdt.query(core_point, k=1, return_distance=True)
+
+                new_data[i, 7] = -1
+                new_data[i, 8] = 1
+                new_data[i, 9] = -1
+                new_data[i, 10] = np.average(dis_set[0])
+                gaussian_weight = np.array(gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                new_data[i, 11] = np.average(gaussian_weight_dis)
         else:
             print("可视相机数量：", np.sum(final_idx[i]))
             sfm_mvs_error = mvs_error_scores(core_point, cam_set, ray_radius_in_pix*pixel_size/f)
@@ -513,9 +567,9 @@ if __name__ == '__main__':
             error_space = cam_boolean(core_point, cam_set, sfm_mvs_error, engine_="trimesh")
             print("误差空间体积为：" + str(error_space.volume*1000000) + "mm^3")
 
-            mesh = pv.make_tri_mesh(np.asarray(error_space.vertices), np.asarray(error_space.faces))
-            mesh = pv.wrap(mesh)
-            mesh.plot(show_edges=True, line_width=1)
+            # mesh = pv.make_tri_mesh(np.asarray(error_space.vertices), np.asarray(error_space.faces))
+            # mesh = pv.wrap(mesh)
+            # mesh.plot(show_edges=True, line_width=1)
             print("开始临近点搜寻")
 
             error_space_points = np.asarray(error_space.vertices)
@@ -525,140 +579,73 @@ if __name__ == '__main__':
             print("搜寻半径1", max_distance)
             print("搜寻半径2", radius_from_mvs)
 
-            idx, dis_tree = kdt.query_radius(core_point, r=np.minimum(max_distance, 0.05), return_distance=True)
+            idx, dis_set = kdt.query_radius(core_point, r=np.minimum(max_distance, 0.05), return_distance=True)
             idx = idx[0]
-            dis_tree = dis_tree[0]
             neighbor_set = points_in_ref[idx]
             print("邻近点搜寻结束, 一共 ", len(neighbor_set), " 邻近点")
 
-            intersection_mesh = error_space.as_open3d
-            core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=0.002).translate(
-                (core_point[0, 0], core_point[0, 1], core_point[0, 2]))
-            pcd_neighbor_set = o3d.geometry.PointCloud()
-            pcd_neighbor_set.points = o3d.utility.Vector3dVector(neighbor_set)
-            o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
-                                              mesh_show_wireframe=True,
-                                              window_name='4 pixel')
+            if len(neighbor_set):
+                # intersection_mesh = error_space.as_open3d
+                # core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=0.002).translate(
+                #     (core_point[0, 0], core_point[0, 1], core_point[0, 2]))
+                # pcd_neighbor_set = o3d.geometry.PointCloud()
+                # pcd_neighbor_set.points = o3d.utility.Vector3dVector(neighbor_set)
+                # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
+                #                                   mesh_show_wireframe=True,
+                #                                   window_name='4 pixel')
+                #
+                # o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
+                #                                   window_name='before filtered')
 
-            o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
-                                              window_name='before filtered')
+                print("开始过滤邻近点")
+                signed_dis = trimesh.proximity.signed_distance(error_space, neighbor_set)
+                # print(signed_dis)
 
-            print("开始过滤邻近点")
-            signed_dis = trimesh.proximity.signed_distance(error_space, points_in_ref[idx])
-            # print(signed_dis)
+                idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
+                if len(idx_inner):
+                    neighbor_set_inner = points_in_ref[idx[idx_inner]]
 
-            idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
-            neighbor_set_inner = points_in_ref[idx[idx_inner]]
+                    # print(neighbor_set_inner)
+                    print("临近点过滤结束, 一共 ", len(neighbor_set_inner), " 邻近点")
 
-            # print(neighbor_set_inner)
-            print("临近点过滤结束, 一共 ", len(neighbor_set_inner), " 邻近点")
+                    # pcd_neighbor_set_inner = o3d.geometry.PointCloud()
+                    # pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
+                    #
+                    # o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
+                    # window_name='filtered')
+                    new_data[i, 7] = radius_from_mvs
+                    new_data[i, 8] = len(neighbor_set_inner)
+                    new_data[i, 9] = error_space.volume*1000000
 
-            pcd_neighbor_set_inner = o3d.geometry.PointCloud()
-            pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
+                    filtered_dist_set = np.array(signed_dis[idx_inner])
+                    new_data[i, 10] = np.average(filtered_dist_set)
+                    gaussian_weight = np.array(gaussian_dis(filtered_dist_set, sigma_for_dis_=0.007, mu=np.min(filtered_dist_set)))
+                    gaussian_weight_dis = np.sum(gaussian_weight * filtered_dist_set) / np.sum(gaussian_weight)
+                    new_data[i, 11] = np.average(gaussian_weight_dis)
 
-            o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
-            window_name='filtered')
+                else:
+                    # print("XXXXXX1")
+                    new_data[i, 7] = radius_from_mvs
+                    new_data[i, 8] = len(neighbor_set)
+                    new_data[i, 9] = error_space.volume * 1000000
+                    new_data[i, 10] = np.average(dis_set[0])
+                    gaussian_weight = np.array(
+                        gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                    gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                    new_data[i, 11] = np.average(gaussian_weight_dis)
 
+            else:
+                # print("XXXXXX2")
+                dis_set, idx = kdt.query(core_point, k=1, return_distance=True)
 
+                new_data[i, 7] = -1
+                new_data[i, 8] = 1
+                new_data[i, 9] = -1
+                new_data[i, 10] = np.average(dis_set[0])
+                gaussian_weight = np.array(
+                    gaussian_dis(dis_set[0], sigma_for_dis_=0.007, mu=np.min(dis_set[0])))
+                gaussian_weight_dis = np.sum(gaussian_weight * np.array(dis_set[0])) / np.sum(gaussian_weight)
+                new_data[i, 11] = np.average(gaussian_weight_dis)
 
-# if __name__ == '__main__':
-#     '''
-#     大疆Phantom 4 Pro
-#     传感器大小：1英寸 13.2 mm x 8.8 mm
-#     分辨率：5472×3648
-#     像元大小：2.4123 um
-#     焦距：8.8 mm
-#     FOV：84° 对角线分辨率
-#     '''
-#     w, h = 13.2, 8.8
-#     f = 8.8
-#     fov = 84
-#     fov_w = np.arctan(w / 2 / f) / np.pi * 180 * 2
-#     fov_h = np.arctan(h / 2 / f) / np.pi * 180 * 2
-#
-#     resol_x, resol_y = 5472, 3648
-#     cx, cy = -26.1377554238884, -14.8594719360401
-#     f_xy = 3685.25307322617
-#     pixel_size = np.average([w / resol_x, h / resol_y])
-#
-#     # dist: 畸变参数 [k1, k2, k3, k4, p1, p2, b1, b2]
-#     # b1, b2 是 affinity and non-orthogonality (skew) coefficients
-#     dist = np.array(
-#         [-0.288928920598278, 0.145903038241546, -0.0664869742590238, 0.0155044924834934, -0.000606112069582838,
-#          0.000146688084883612, 0.238532277878522, -0.464831768588501])
-#
-#     bx, by = dist[-2], dist[-1]
-#
-#     intrinsic_matrix = [[f_xy + bx, by, resol_x / 2 + cx],
-#                         [0, f_xy, resol_y / 2 + cy],
-#                         [0, 0, 1]]
-#     print(intrinsic_matrix)
-#
-#     nx, ny = (3, 3)
-#     x = np.linspace(-10, 10, nx)
-#     # [0. 1. 2.]
-#     y = np.linspace(-10, 10, ny)
-#     # [0. 1. 2.]
-#     xv, yv = np.meshgrid(x, y)
-#     print(xv.ravel())
-#     #[ 0.  1.  2.  0.  1.  2.  0.  1.  2.]
-#     print(yv.ravel())
-#     #[ 0.  0.  0.  1.  1.  1.  2.  2.  2.]
-#
-#     cam_locs = np.hstack((np.hstack((xv.reshape(-1, 1), yv.reshape(-1, 1))), np.ones(xv.size).reshape(-1, 1)*10))
-#
-#     print(cam_locs)
-#
-#     pts_loc = np.array([[0, 0, 0]])
-#
-#     pts_norm = np.array([[0, 0, 1]])
-#
-#     cam_loc = np.array([[0, 0, 5],
-#                         [1, 1, 5],
-#                         [2, 2, 4],
-#                         [3, 3, 5],
-#                         [-1, -1, 3],
-#                         [-2, -2, 5],
-#                         [-3, -3, 4]])
-#
-#     mvs_error = mvs_error_scores(pts_loc, cam_loc, 1)
-#     #
-#     # pts_loc = np.array([[0, 0, 0],
-#     #                     [1, 1, 0],
-#     #                     [2, 2, 0],
-#     #                     [3, 3, 0],
-#     #                     [-1, -1, 0],
-#     #                     [-2, -2, 0],
-#     #                     [-3, -3, 0]])
-#     #
-#     # pts_norm = np.array([[0, 0, 1],
-#     #                     [0, 0, 1],
-#     #                     [0, 0, 1],
-#     #                     [0, 0, 1],
-#     #                     [0, 0, 1],
-#     #                     [0, 0, 1],
-#     #                     [0, 0, 1]])
-#
-#     # pts_cam_ang(cam_locs, pts_loc, pts_norm)
-#     #
-#     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/2.ply")
-#     #
-#     # pts = np.asarray(mesh_test.vertices)
-#     # norms = np.asarray(mesh_test.vertex_normals)
-#     #
-#     # data = pd.read_csv("../data/zehao/cameras/25m30d90o.csv", encoding="utf-8")
-#     # # print(data.head(5))
-#     # cam_locs = data[["X", "Y", "Z"]].values
-#     #
-#     # print(norms)
-#     #
-#     # out_ang = pts_cam_ang(cam_locs, pts, norms)
-#     #
-#     # np.savetxt('ang_mat_ind.txt', out_ang)
-#
-#     # mesh_test = o3d.io.read_triangle_mesh("../data/zehao/plys/UAV_only_B_zone.glb")
-#     # print("Try to render a mesh with normals (exist: " +
-#     #       str(mesh_test.has_vertex_normals()) + ") and colors (exist: " +
-#     #       str(mesh_test.has_vertex_colors()) + ")")
-#     # o3d.visualization.draw_geometries([mesh_test])
-#     # print("A mesh with no normals and no colors does not look good.")
+    np.savetxt('all_you_need_to_know_about_A.txt', new_data)
+
