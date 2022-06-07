@@ -5,7 +5,8 @@ from scipy.spatial.transform import Rotation as R
 from scipy.spatial import distance_matrix
 import trimesh
 import time
-import pymesh
+import pyvista as pv
+# import pymesh
 
 
 def angle_between_vectors(v1_, v2_):
@@ -291,10 +292,10 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
 
     vets_ = cam_locs_ - pts_locs_
     dist_to_pts_ = np.linalg.norm(vets_, axis=1, keepdims=True)
-    samp_rate_ = dist_to_pts_*scale_fac_
+    samp_rate_ = 1/(dist_to_pts_*scale_fac_)
 
     cam_1_, cam_2_ = np.meshgrid(samp_rate_, samp_rate_)
-    min_cam_samp_rate_ = np.maximum(cam_1_, cam_2_)
+    min_cam_samp_rate_ = np.minimum(cam_1_, cam_2_)
     min_cam_samp_rate_[np.eye(len(min_cam_samp_rate_), dtype=np.bool_)] = 0
     cam_samp_new = mat_mask_*min_cam_samp_rate_
 
@@ -328,7 +329,7 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
     # print(weighted_ang)
 
     mvs_error_ = weighted_ang_new*cam_samp_new
-    mvs_error_[mvs_error_ >= np.max(samp_rate_)] = 0
+    # mvs_error_[mvs_error_ >= np.max(samp_rate_)] = 0
     # mvs_radius_ = 1/mvs_error_
     # print(mvs_error_)
 
@@ -337,25 +338,27 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
 
 def boolean_of_cone(pts_loc_, cam_a_loc_, cam_b_loc_, engine_="trimesh"):
     if engine_ == "trimesh":
+        print("正在进行布尔运算")
         cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
         mesh_a_ = trimesh.Trimesh(vertices=np.asarray(cone_a_.vertices), faces=np.asarray(cone_a_.triangles))
 
         cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
         mesh_b_ = trimesh.Trimesh(vertices=np.asarray(cone_b_.vertices), faces=np.asarray(cone_b_.triangles))
 
-        mesh_intersect_ = trimesh.boolean.intersection([mesh_a_, mesh_b_], engine='blender')
+        mesh_intersect_ = trimesh.boolean.intersection([mesh_a_, mesh_b_], engine='scad')
         mesh_intersect_renew_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
-    elif engine_ == "pymesh":
-        cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
-        mesh_a_ = pymesh.form_mesh(np.asarray(cone_a_.vertices), np.asarray(cone_a_.triangles))
 
-        cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
-        mesh_b_ = pymesh.form_mesh(np.asarray(cone_b_.vertices), np.asarray(cone_b_.triangles))
-
-        mesh_intersect_ = pymesh.boolean(mesh_a_, mesh_b_, operation="intersection", engine="igl")
-        mesh_intersect_ = trimesh.Trimesh(vertices=np.asarray(mesh_intersect_.vertices), faces=np.asarray(mesh_intersect_.faces))
-        mesh_intersect_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
-        mesh_intersect_renew_ = pymesh.form_mesh(np.asarray(mesh_intersect_.vertices), np.asarray(mesh_intersect_.faces))
+    # elif engine_ == "pymesh":
+    #     cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+    #     mesh_a_ = pymesh.form_mesh(np.asarray(cone_a_.vertices), np.asarray(cone_a_.triangles))
+    #
+    #     cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+    #     mesh_b_ = pymesh.form_mesh(np.asarray(cone_b_.vertices), np.asarray(cone_b_.triangles))
+    #
+    #     mesh_intersect_ = pymesh.boolean(mesh_a_, mesh_b_, operation="intersection", engine="igl")
+    #     mesh_intersect_ = trimesh.Trimesh(vertices=np.asarray(mesh_intersect_.vertices), faces=np.asarray(mesh_intersect_.faces))
+    #     mesh_intersect_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
+    #     mesh_intersect_renew_ = pymesh.form_mesh(np.asarray(mesh_intersect_.vertices), np.asarray(mesh_intersect_.faces))
 
     return mesh_intersect_renew_
 
@@ -363,46 +366,50 @@ def boolean_of_cone(pts_loc_, cam_a_loc_, cam_b_loc_, engine_="trimesh"):
 def cam_boolean(pts_locs_, cam_locs_, mvs_error_, engine_="trimesh"):
     sorted_ = np.argsort(mvs_error_.flatten())
     num_of_zero = mvs_error_.shape[1] + (mvs_error_.shape[1] - 1 + 1)*(mvs_error_.shape[1] - 1)/2
-    sorted_idx_ = np.array([divmod(sorted_[np.int32(num_of_zero)], mvs_error_.shape[1]),
-                            divmod(sorted_[np.int32(num_of_zero + 1)], mvs_error_.shape[1]),
-                            divmod(sorted_[np.int32(num_of_zero + 2)], mvs_error_.shape[1])], dtype=np.int32)
+    sorted_idx_ = np.array([divmod(sorted_[-1], mvs_error_.shape[1]),
+                            divmod(sorted_[-2], mvs_error_.shape[1]),
+                            divmod(sorted_[-3], mvs_error_.shape[1])], dtype=np.int32)
 
     print(sorted_idx_)
-    print([mvs_error_[sorted_idx_[0, 0], sorted_idx_[0, 1]],
-           mvs_error_[sorted_idx_[1, 0], sorted_idx_[1, 1]],
-           mvs_error_[sorted_idx_[2, 0], sorted_idx_[2, 1]]])
+    print([1/(mvs_error_[sorted_idx_[0, 0], sorted_idx_[0, 1]]),
+           1/(mvs_error_[sorted_idx_[1, 0], sorted_idx_[1, 1]]),
+           1/(mvs_error_[sorted_idx_[2, 0], sorted_idx_[2, 1]])])
 
+    # int_final_renew_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
+    # print("布尔运算结束")
     if engine_ == "trimesh":
         int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
         int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]], engine_=engine_)
         int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]], engine_=engine_)
 
-        int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='blender')
+        int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='scad')
         int_1_2_renew_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
-        int_2_3_ = trimesh.boolean.intersection([int_2_, int_3_], engine='blender')
+        int_2_3_ = trimesh.boolean.intersection([int_2_, int_3_], engine='scad')
         int_2_3_renew_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
 
-        int_final_ = trimesh.boolean.intersection([int_1_2_renew_, int_2_3_renew_], engine='blender')
+        int_final_ = trimesh.boolean.intersection([int_1_2_renew_, int_2_3_renew_], engine='scad')
         int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
 
-    elif engine_ == "pymesh":
-        int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
-        int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]], engine_=engine_)
-        int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]], engine_=engine_)
+        print("布尔运算结束")
 
-        int_1_2_ = pymesh.boolean(int_1_, int_2_, operation="intersection", engine="igl")
-        int_1_2_ = trimesh.Trimesh(vertices=np.asarray(int_1_2_.vertices), faces=np.asarray(int_1_2_.faces))
-        int_1_2_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
-        int_1_2_renew_ = pymesh.form_mesh(np.asarray(int_1_2_.vertices), np.asarray(int_1_2_.faces))
-
-        int_2_3_ = pymesh.boolean(int_2_, int_3_, operation="intersection", engine="igl")
-        int_2_3_ = trimesh.Trimesh(vertices=np.asarray(int_2_3_.vertices), faces=np.asarray(int_2_3_.faces))
-        int_2_3_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
-        int_2_3_renew_ = pymesh.form_mesh(np.asarray(int_2_3_.vertices), np.asarray(int_2_3_.faces))
-
-        int_final_ = pymesh.boolean(int_1_2_renew_, int_2_3_renew_, operation="intersection", engine="igl")
-        int_final_ = trimesh.Trimesh(vertices=np.asarray(int_final_.vertices), faces=np.asarray(int_final_.faces))
-        int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
+    # elif engine_ == "pymesh":
+    #     int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
+    #     int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]], engine_=engine_)
+    #     int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]], engine_=engine_)
+    #
+    #     int_1_2_ = pymesh.boolean(int_1_, int_2_, operation="intersection", engine="igl")
+    #     int_1_2_ = trimesh.Trimesh(vertices=np.asarray(int_1_2_.vertices), faces=np.asarray(int_1_2_.faces))
+    #     int_1_2_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
+    #     int_1_2_renew_ = pymesh.form_mesh(np.asarray(int_1_2_.vertices), np.asarray(int_1_2_.faces))
+    #
+    #     int_2_3_ = pymesh.boolean(int_2_, int_3_, operation="intersection", engine="igl")
+    #     int_2_3_ = trimesh.Trimesh(vertices=np.asarray(int_2_3_.vertices), faces=np.asarray(int_2_3_.faces))
+    #     int_2_3_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
+    #     int_2_3_renew_ = pymesh.form_mesh(np.asarray(int_2_3_.vertices), np.asarray(int_2_3_.faces))
+    #
+    #     int_final_ = pymesh.boolean(int_1_2_renew_, int_2_3_renew_, operation="intersection", engine="igl")
+    #     int_final_ = trimesh.Trimesh(vertices=np.asarray(int_final_.vertices), faces=np.asarray(int_final_.faces))
+    #     int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
 
     return int_final_renew_
 
@@ -498,26 +505,59 @@ if __name__ == '__main__':
         else:
             print("可视相机数量：", np.sum(final_idx[i]))
             sfm_mvs_error = mvs_error_scores(core_point, cam_set, ray_radius_in_pix*pixel_size/f)
-            error_space = cam_boolean(core_point, cam_set, sfm_mvs_error, engine_="trimesh")
-            error_space_points = np.asarray(error_space.vertices)
 
+            sorted_ = np.argsort(sfm_mvs_error.flatten())
+            sorted_idx = np.array([divmod(sorted_[-1], sfm_mvs_error.shape[1])], dtype=np.int32)
+            radius_from_mvs = 1/(sfm_mvs_error[sorted_idx[0, 0], sorted_idx[0, 1]])
+
+            error_space = cam_boolean(core_point, cam_set, sfm_mvs_error, engine_="trimesh")
+            print("误差空间体积为：" + str(error_space.volume*1000000) + "mm^3")
+
+            mesh = pv.make_tri_mesh(np.asarray(error_space.vertices), np.asarray(error_space.faces))
+            mesh = pv.wrap(mesh)
+            mesh.plot(show_edges=True, line_width=1)
+            print("开始临近点搜寻")
+
+            error_space_points = np.asarray(error_space.vertices)
             max_distance = np.max(distance_matrix(core_point, error_space_points))
 
-            print("搜寻半径0", 3*(25*(ray_radius_in_pix*pixel_size)/f))
+            print("搜寻半径0", 3 * (25 * (ray_radius_in_pix * pixel_size) / f))
             print("搜寻半径1", max_distance)
+            print("搜寻半径2", radius_from_mvs)
 
-            idx, dis_tree = kdt.query_radius(core_point, r=max_distance, return_distance=True)
+            idx, dis_tree = kdt.query_radius(core_point, r=np.minimum(max_distance, 0.05), return_distance=True)
             idx = idx[0]
             dis_tree = dis_tree[0]
-
             neighbor_set = points_in_ref[idx]
+            print("邻近点搜寻结束, 一共 ", len(neighbor_set), " 邻近点")
 
+            intersection_mesh = error_space.as_open3d
+            core_from_target = o3d.geometry.TriangleMesh.create_sphere(radius=0.002).translate(
+                (core_point[0, 0], core_point[0, 1], core_point[0, 2]))
+            pcd_neighbor_set = o3d.geometry.PointCloud()
+            pcd_neighbor_set.points = o3d.utility.Vector3dVector(neighbor_set)
+            o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target, intersection_mesh],
+                                              mesh_show_wireframe=True,
+                                              window_name='4 pixel')
+
+            o3d.visualization.draw_geometries([pcd_neighbor_set, core_from_target],
+                                              window_name='before filtered')
+
+            print("开始过滤邻近点")
             signed_dis = trimesh.proximity.signed_distance(error_space, points_in_ref[idx])
+            # print(signed_dis)
 
             idx_inner = np.argwhere(signed_dis > 0).flatten().tolist()
             neighbor_set_inner = points_in_ref[idx[idx_inner]]
 
-            print(neighbor_set_inner)
+            # print(neighbor_set_inner)
+            print("临近点过滤结束, 一共 ", len(neighbor_set_inner), " 邻近点")
+
+            pcd_neighbor_set_inner = o3d.geometry.PointCloud()
+            pcd_neighbor_set_inner.points = o3d.utility.Vector3dVector(neighbor_set_inner)
+
+            o3d.visualization.draw_geometries([pcd_neighbor_set_inner, core_from_target],
+            window_name='filtered')
 
 
 
