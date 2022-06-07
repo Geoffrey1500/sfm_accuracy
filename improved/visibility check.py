@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as R
 from scipy.spatial import distance_matrix
 import trimesh
 import time
+import pymesh
 
 
 def angle_between_vectors(v1_, v2_):
@@ -334,20 +335,32 @@ def mvs_error_scores(pts_locs_, cam_locs_, scale_fac_):
     return mvs_error_
 
 
-def boolean_of_cone(pts_loc_, cam_a_loc_, cam_b_loc_):
-    cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
-    mesh_a_ = trimesh.Trimesh(vertices=np.asarray(cone_a_.vertices), faces=np.asarray(cone_a_.triangles))
+def boolean_of_cone(pts_loc_, cam_a_loc_, cam_b_loc_, engine_="trimesh"):
+    if engine_ == "trimesh":
+        cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+        mesh_a_ = trimesh.Trimesh(vertices=np.asarray(cone_a_.vertices), faces=np.asarray(cone_a_.triangles))
 
-    cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
-    mesh_b_ = trimesh.Trimesh(vertices=np.asarray(cone_b_.vertices), faces=np.asarray(cone_b_.triangles))
+        cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+        mesh_b_ = trimesh.Trimesh(vertices=np.asarray(cone_b_.vertices), faces=np.asarray(cone_b_.triangles))
 
-    mesh_intersect_ = trimesh.boolean.intersection([mesh_a_, mesh_b_], engine='scad')
-    mesh_intersect_renew_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
+        mesh_intersect_ = trimesh.boolean.intersection([mesh_a_, mesh_b_], engine='blender')
+        mesh_intersect_renew_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
+    elif engine_ == "pymesh":
+        cone_a_ = useful_tools(cam_a_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+        mesh_a_ = pymesh.form_mesh(np.asarray(cone_a_.vertices), np.asarray(cone_a_.triangles))
+
+        cone_b_ = useful_tools(cam_b_loc_, pts_loc_, np.array([0, 0, 1]), pix_size_=pixel_size, focal_=f)
+        mesh_b_ = pymesh.form_mesh(np.asarray(cone_b_.vertices), np.asarray(cone_b_.triangles))
+
+        mesh_intersect_ = pymesh.boolean(mesh_a_, mesh_b_, operation="intersection", engine="igl")
+        mesh_intersect_ = trimesh.Trimesh(vertices=np.asarray(mesh_intersect_.vertices), faces=np.asarray(mesh_intersect_.faces))
+        mesh_intersect_ = trimesh.convex.convex_hull(mesh_intersect_, qhull_options='Qt')
+        mesh_intersect_renew_ = pymesh.form_mesh(np.asarray(mesh_intersect_.vertices), np.asarray(mesh_intersect_.faces))
 
     return mesh_intersect_renew_
 
 
-def cam_boolean(pts_locs_, cam_locs_, mvs_error_):
+def cam_boolean(pts_locs_, cam_locs_, mvs_error_, engine_="trimesh"):
     sorted_ = np.argsort(mvs_error_.flatten())
     num_of_zero = mvs_error_.shape[1] + (mvs_error_.shape[1] - 1 + 1)*(mvs_error_.shape[1] - 1)/2
     sorted_idx_ = np.array([divmod(sorted_[np.int32(num_of_zero)], mvs_error_.shape[1]),
@@ -359,17 +372,37 @@ def cam_boolean(pts_locs_, cam_locs_, mvs_error_):
            mvs_error_[sorted_idx_[1, 0], sorted_idx_[1, 1]],
            mvs_error_[sorted_idx_[2, 0], sorted_idx_[2, 1]]])
 
-    int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]])
-    int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]])
-    int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]])
+    if engine_ == "trimesh":
+        int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
+        int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]], engine_=engine_)
+        int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]], engine_=engine_)
 
-    int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='scad')
-    int_1_2_renew_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
-    int_2_3_ = trimesh.boolean.intersection([int_2_, int_3_], engine='scad')
-    int_2_3_renew_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
+        int_1_2_ = trimesh.boolean.intersection([int_1_, int_2_], engine='blender')
+        int_1_2_renew_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
+        int_2_3_ = trimesh.boolean.intersection([int_2_, int_3_], engine='blender')
+        int_2_3_renew_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
 
-    int_final_ = trimesh.boolean.intersection([int_1_2_renew_, int_2_3_renew_], engine='scad')
-    int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
+        int_final_ = trimesh.boolean.intersection([int_1_2_renew_, int_2_3_renew_], engine='blender')
+        int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
+
+    elif engine_ == "pymesh":
+        int_1_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[0, 0]], cam_locs_[sorted_idx_[0, 1]], engine_=engine_)
+        int_2_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[1, 0]], cam_locs_[sorted_idx_[1, 1]], engine_=engine_)
+        int_3_ = boolean_of_cone(pts_locs_, cam_locs_[sorted_idx_[2, 0]], cam_locs_[sorted_idx_[2, 1]], engine_=engine_)
+
+        int_1_2_ = pymesh.boolean(int_1_, int_2_, operation="intersection", engine="igl")
+        int_1_2_ = trimesh.Trimesh(vertices=np.asarray(int_1_2_.vertices), faces=np.asarray(int_1_2_.faces))
+        int_1_2_ = trimesh.convex.convex_hull(int_1_2_, qhull_options='Qt')
+        int_1_2_renew_ = pymesh.form_mesh(np.asarray(int_1_2_.vertices), np.asarray(int_1_2_.faces))
+
+        int_2_3_ = pymesh.boolean(int_2_, int_3_, operation="intersection", engine="igl")
+        int_2_3_ = trimesh.Trimesh(vertices=np.asarray(int_2_3_.vertices), faces=np.asarray(int_2_3_.faces))
+        int_2_3_ = trimesh.convex.convex_hull(int_2_3_, qhull_options='Qt')
+        int_2_3_renew_ = pymesh.form_mesh(np.asarray(int_2_3_.vertices), np.asarray(int_2_3_.faces))
+
+        int_final_ = pymesh.boolean(int_1_2_renew_, int_2_3_renew_, operation="intersection", engine="igl")
+        int_final_ = trimesh.Trimesh(vertices=np.asarray(int_final_.vertices), faces=np.asarray(int_final_.faces))
+        int_final_renew_ = trimesh.convex.convex_hull(int_final_, qhull_options='Qt')
 
     return int_final_renew_
 
@@ -465,7 +498,7 @@ if __name__ == '__main__':
         else:
             print("可视相机数量：", np.sum(final_idx[i]))
             sfm_mvs_error = mvs_error_scores(core_point, cam_set, ray_radius_in_pix*pixel_size/f)
-            error_space = cam_boolean(core_point, cam_set, sfm_mvs_error)
+            error_space = cam_boolean(core_point, cam_set, sfm_mvs_error, engine_="trimesh")
             error_space_points = np.asarray(error_space.vertices)
 
             max_distance = np.max(distance_matrix(core_point, error_space_points))
